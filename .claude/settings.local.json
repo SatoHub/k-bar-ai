@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Users/unoen/projects/k-bar-ai remote -v)",
+      "Bash(gh repo edit:*)",
+      "Bash(git -C /c/Users/unoen/projects/k-bar-ai log --oneline --all)",
+      "WebSearch",
+      "WebFetch(domain:www.jra.go.jp)",
+      "WebFetch(domain:support.keiba.netkeiba.com)",
+      "WebFetch(domain:jra-van.jp)",
+      "WebFetch(domain:www.team-nave.com)",
+      "WebFetch(domain:team-nave.com)",
+      "WebFetch(domain:qiita.com)",
+      "WebFetch(domain:sports.yahoo.co.jp)"
+    ]
+  }
+}
