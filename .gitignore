@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Data
+data/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Docker volumes
+docker/pgdata/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# ML models
+backend/models/
+
+# Alembic
+*.pyc

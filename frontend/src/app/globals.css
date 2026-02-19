@@ -1,0 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* K-Bar AI Design System — Dark Mode                                  */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* Surface */
+  --bg-base: #06080F;
+  --bg-surface: #0D1117;
+  --bg-card: #161B22;
+  --bg-card-hover: #1C2333;
+  --bg-elevated: #21262D;
+
+  /* Accent — Trust Blue */
+  --accent: #3B82F6;
+  --accent-hover: #60A5FA;
+  --accent-muted: rgba(59, 130, 246, 0.15);
+  --accent-glow: rgba(59, 130, 246, 0.25);
+
+  /* CTA — Orange */
+  --cta: #F97316;
+  --cta-hover: #FB923C;
+
+  /* Text */
+  --text-primary: #E6EDF3;
+  --text-secondary: #8B949E;
+  --text-muted: #6E7681;
+
+  /* Border */
+  --border: #21262D;
+  --border-light: #30363D;
+  --border-accent: rgba(59, 130, 246, 0.4);
+
+  /* Status */
+  --green: #3FB950;
+  --yellow: #D29922;
+  --red: #F85149;
+
+  /* 枠番カラー (bracket colors) */
+  --bracket-1: #ffffff;
+  --bracket-2: #1a1a1a;
+  --bracket-3: #dc2626;
+  --bracket-4: #2563eb;
+  --bracket-5: #eab308;
+  --bracket-6: #16a34a;
+  --bracket-7: #ea580c;
+  --bracket-8: #ec4899;
+}
+
+body {
+  font-family: 'Noto Sans JP', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glass card utility */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.glass-card:hover {
+  border-color: var(--border-light);
+}
+
+.glass-card-interactive {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease-out, box-shadow 0.2s ease-out, background-color 0.2s ease-out;
+}
+
+.glass-card-interactive:hover {
+  border-color: var(--border-accent);
+  background: var(--bg-card-hover);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+/* Accent button */
+.btn-accent {
+  background-color: var(--accent);
+  color: #ffffff;
+}
+
+.btn-accent:hover {
+  background-color: var(--accent-hover);
+}
+
+/* Subtle glow for accent elements */
+.accent-glow {
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
