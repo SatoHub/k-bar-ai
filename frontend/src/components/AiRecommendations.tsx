@@ -5,7 +5,7 @@ import type { PredictionEntry, RaceEntry } from "@/lib/api";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる" },
-  { value: "fukusho", label: "複勝", picks: 3, ordered: false, desc: "3着以内を当てる" },
+  { value: "fukusho", label: "複勝", picks: 1, ordered: false, desc: "3着以内を当てる" },
   { value: "umaren", label: "馬連", picks: 2, ordered: false, desc: "1-2着の組合せ" },
   { value: "umatan", label: "馬単", picks: 2, ordered: true, desc: "1-2着を着順通り" },
   { value: "wide", label: "ワイド", picks: 2, ordered: false, desc: "3着以内の2頭" },

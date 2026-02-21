@@ -38,3 +38,9 @@ backend/models/
 
 # Alembic
 *.pyc
+
+# Production backups
+backups/
+
+# Basic auth password file
+docker/nginx/.htpasswd

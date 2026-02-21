@@ -9,6 +9,7 @@ from app.models.prediction import PredictionLog
 from app.models.model_version import ModelVersion
 from app.models.odds_snapshot import OddsSnapshot
 from app.models.scrape_log import ScrapeLog
+from app.models.notification_log import NotificationLog
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "ModelVersion",
     "OddsSnapshot",
     "ScrapeLog",
+    "NotificationLog",
 ]

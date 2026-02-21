@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/", label: "ダッシュボード" },
   { href: "/races", label: "レース一覧" },
   { href: "/bets", label: "収支" },
+  { href: "/results", label: "AI成績" },
   { href: "/models", label: "モデル管理" },
 ] as const;
 

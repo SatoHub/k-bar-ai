@@ -66,6 +66,8 @@ class RaceListItem(BaseModel):
     weather: str | None = None
     track_condition: str | None = None
     graded_race: str | None = None
+    head_count: int | None = None
+    stub_only: bool = False
 
 
 class RaceDetail(RaceListItem):

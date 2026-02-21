@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **AI予想成績ページ** (`/results`) — AI予想と実結果の比較・的中率分析
+  - カレンダーUIで日付選択、競馬場タブでフィルタリング
+  - 7馬券種（単勝/複勝/馬連/馬単/ワイド/3連複/3連単）の的中率サマリーカード
+  - レース結果一覧（結果TOP3 / AI予想TOP3 / 的中バッジ表示）
+  - 初回表示時に最新結果日に自動ジャンプ
+  - Backend: `results_service.py` (的中判定ロジック), `api/v1/results.py` (5エンドポイント)
+- **スケジューラ管理** — APScheduler によるデータ収集自動化
+  - 5ジョブ: カレンダー(6:00), 出馬表(18:00), AI予想(18:30), オッズ(8-16:30/30分毎), 結果(17:00,19:00)
+  - SchedulerStatus ダッシュボードウィジェット（手動実行・一時停止・再開ボタン）
+  - REST API: ステータス確認/手動トリガー/一時停止/再開
+  - 全スケジュール設定を環境変数で変更可能
+- **AI予想自動化** — 出馬表取得後に翌日レースのAI予想を自動実行
+  - `job_predict`: 毎日18:30 JST (出馬表取得30分後)
+  - モデルバージョンは `SCHED_PREDICT_MODEL_VERSION` 環境変数で設定可能
+
+### Fixed
+- Next.js 15.5 ビルドエラー修正（`not-found.tsx` 追加）
+- AiRecommendations.tsx 複勝の picks 値修正 (3→1)
+
 - **馬券シミュレーション拡張** — 7馬券種対応＋専用ページ新設
   - BettingSimulator: 単勝・複勝・馬連・馬単・ワイド・三連複・三連単の7種対応
   - 馬券種に応じた動的UI（1〜3頭選択、馬単/三連単は着順ラベル付き）

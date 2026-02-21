@@ -11,7 +11,7 @@ from app.schemas.bet import (
     BetRecordUpdate,
     BetSummaryResponse,
 )
-from app.services.bet_service import create_bet, get_bet_summary, get_bets, update_bet
+from app.services.bet_service import create_bet, delete_bet, get_bet_summary, get_bets, update_bet
 
 router = APIRouter(prefix="/bets", tags=["bets"])
 
@@ -47,3 +47,13 @@ async def update(
     if not bet:
         raise HTTPException(status_code=404, detail="Bet not found")
     return bet
+
+
+@router.delete("/{bet_id}", status_code=204)
+async def delete(
+    bet_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    deleted = await delete_bet(session, bet_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Bet not found")

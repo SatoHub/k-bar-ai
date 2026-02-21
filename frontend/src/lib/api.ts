@@ -117,6 +117,8 @@ export type RaceListItem = {
   weather: string | null;
   track_condition: string | null;
   graded_race: string | null;
+  head_count: number | null;
+  stub_only: boolean;
   upset_score?: number | null;
 };
 
@@ -140,6 +142,7 @@ export type RaceListResponse = {
 export type CalendarDay = {
   date: string;
   race_count: number;
+  has_entries: boolean;
 };
 
 export type CalendarResponse = {
@@ -271,6 +274,19 @@ export type AptitudeResponse = {
 };
 
 // Bet records
+export type RaceResultEntry = {
+  finish_position: number;
+  horse_name: string;
+};
+
+export type BetRaceInfo = {
+  race_number: number | null;
+  racecourse_name: string | null;
+  race_name: string | null;
+  race_id_str: string | null;
+  result_top3: RaceResultEntry[];
+};
+
 export type BetRecord = {
   id: string;
   race_id: string | null;
@@ -283,6 +299,7 @@ export type BetRecord = {
   is_hit: boolean | null;
   note: string | null;
   created_at: string;
+  race_info: BetRaceInfo | null;
 };
 
 export type BetRecordCreate = {
@@ -420,4 +437,150 @@ export function updateBet(
 
 export function fetchBetSummary(): Promise<BetSummary> {
   return fetchJSON<BetSummary>("/bets/summary");
+}
+
+// ---------------------------------------------------------------------------
+// Results (AI prediction hit analysis)
+// ---------------------------------------------------------------------------
+
+export type ResultTop3Entry = {
+  finish_position: number;
+  horse_name: string;
+  win_odds: number | null;
+  win_favorite: number | null;
+};
+
+export type PredictedTop3Entry = {
+  rank: number;
+  horse_name: string;
+};
+
+export type AIHitResult = {
+  predicted_top3: PredictedTop3Entry[];
+  tansho_hit: boolean;
+  fukusho_hit: boolean;
+  umaren_hit: boolean;
+  umatan_hit: boolean;
+  wide_hit: boolean;
+  sanrenpuku_hit: boolean;
+  sanrentan_hit: boolean;
+};
+
+export type RaceResultWithAI = {
+  race_id_str: string;
+  race_date: string | null;
+  racecourse_name: string | null;
+  race_number: number | null;
+  race_name: string | null;
+  surface: string | null;
+  distance_m: number | null;
+  result_top3: ResultTop3Entry[];
+  ai_prediction: AIHitResult | null;
+};
+
+export type RaceResultsResponse = {
+  items: RaceResultWithAI[];
+};
+
+export type HitRateEntry = {
+  hits: number;
+  total: number;
+  rate: number;
+};
+
+export type ResultsSummary = {
+  total_races: number;
+  period: string;
+  hit_rates: Record<string, HitRateEntry>;
+};
+
+export type ResultsCalendarDay = {
+  date: string;
+  race_count: number;
+};
+
+export type ResultsCalendarResponse = {
+  days: ResultsCalendarDay[];
+};
+
+export function fetchLatestResultDate(): Promise<{ latest_date: string | null }> {
+  return fetchJSON<{ latest_date: string | null }>("/results/latest-date");
+}
+
+export function fetchResultsCalendar(
+  yearMonth: string,
+): Promise<ResultsCalendarResponse> {
+  return fetchJSON<ResultsCalendarResponse>(
+    `/results/calendar?year_month=${yearMonth}`,
+  );
+}
+
+export function fetchResultsRacecourses(
+  date: string,
+): Promise<{ racecourses: string[] }> {
+  return fetchJSON<{ racecourses: string[] }>(
+    `/results/racecourses?date=${date}`,
+  );
+}
+
+export function fetchResults(params: {
+  date: string;
+  racecourse?: string;
+}): Promise<RaceResultsResponse> {
+  const sp = new URLSearchParams();
+  sp.set("date", params.date);
+  if (params.racecourse) sp.set("racecourse", params.racecourse);
+  return fetchJSON<RaceResultsResponse>(`/results?${sp.toString()}`);
+}
+
+export function fetchResultsSummary(
+  yearMonth?: string,
+  racecourse?: string,
+): Promise<ResultsSummary> {
+  const sp = new URLSearchParams();
+  if (yearMonth) sp.set("year_month", yearMonth);
+  if (racecourse) sp.set("racecourse", racecourse);
+  const qs = sp.toString();
+  return fetchJSON<ResultsSummary>(`/results/summary${qs ? `?${qs}` : ""}`);
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler
+// ---------------------------------------------------------------------------
+
+export type SchedulerJobInfo = {
+  id: string;
+  name: string;
+  next_run: string | null;
+  last_run: string | null;
+  last_status: string | null;
+  last_detail: string | null;
+};
+
+export type SchedulerStatus = {
+  running: boolean;
+  paused: boolean;
+  timezone: string;
+  jobs: SchedulerJobInfo[];
+};
+
+export type TriggerResponse = {
+  success: boolean;
+  message: string;
+};
+
+export function fetchSchedulerStatus(): Promise<SchedulerStatus> {
+  return fetchJSON<SchedulerStatus>("/scheduler/status");
+}
+
+export function triggerSchedulerJob(jobId: string): Promise<TriggerResponse> {
+  return postJSON<TriggerResponse>(`/scheduler/jobs/${jobId}/trigger`);
+}
+
+export function pauseScheduler(): Promise<TriggerResponse> {
+  return postJSON<TriggerResponse>("/scheduler/pause");
+}
+
+export function resumeScheduler(): Promise<TriggerResponse> {
+  return postJSON<TriggerResponse>("/scheduler/resume");
 }

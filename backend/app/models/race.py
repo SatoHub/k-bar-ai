@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import Date, Index, SmallInteger, String, Time
+from sqlalchemy import Boolean, Date, Index, SmallInteger, String, Time
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,8 @@ class Race(Base):
     graded_race: Mapped[str | None] = mapped_column(String(50))
     race_symbols: Mapped[dict | None] = mapped_column(JSONB)
     post_time: Mapped[datetime.time | None] = mapped_column(Time)
+    head_count: Mapped[int | None] = mapped_column(SmallInteger)
+    stub_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     data_source: Mapped[str | None] = mapped_column(String(16))
 
     entries: Mapped[list["RaceEntry"]] = relationship(back_populates="race")  # noqa: F821

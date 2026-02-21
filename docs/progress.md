@@ -1,50 +1,55 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-02-21（AI推奨・競馬場タブ・発走時刻表示 追加）
+**最終更新:** 2026-02-21（Step C: LINE通知システム実装）
 
 ---
 
-## 前回セッション（2026-02-21 第2回）の作業内容
+## 前回セッション（2026-02-21 第3回）の作業内容
 
-### AI推奨ベット表示（シミュレーションページ）
-- [x] AiRecommendations.tsx 新規作成: 7馬券種ごとのAI推奨表示
-- [x] ◎○▲△☆ランクマーク、スコアバー、信頼度バッジ
-- [x] クリックでBettingSimulatorに自動入力（prefill機構）
-- [x] simulate/page.tsx にAI予想データ取得・prefill連携追加
+### Step C: LINE通知システム実装
 
-### 競馬場タブフィルター（レース一覧）
-- [x] races/page.tsx: 東京/阪神/小倉タブ表示（日付選択時のみ）
-- [x] decodeRacecourse() によるクライアントサイドフィルタリング
-- [x] 各タブにレース数バッジ表示
-- [x] per_page=50 で日付指定時の全件取得対応
+**Phase 1: 基盤**
+- [x] `pyproject.toml` に `line-bot-sdk>=3.14.0` 追加（3.22.0 インストール済み）
+- [x] `config.py` に `LINE_USER_ID` + 通知スケジューラ設定追加
+- [x] `notification_log.py` 新規作成（direction, message_type, category, status, payload JSONB）
+- [x] `models/__init__.py` に NotificationLog 登録
+- [x] Alembicマイグレーション `a1b2c3d4e567` 作成・適用済み
 
-### 発走時刻・レース状態表示
-- [x] Race モデルに post_time (Time) カラム追加 + マイグレーション
-- [x] RaceTable.tsx: 発走時刻列 + ステータスバッジ（終了/発走中/未発走）
-- [x] 終了レースは半透明表示、発走中はアニメーション付きドット
-- [x] scraper/store.py: post_time の保存対応（_parse_post_time ヘルパー）
-- [x] cli.py: race_listからshutuba dataへpost_time マージ
+**Phase 2: サービス層**
+- [x] `notification_service.py` 全面書き換え → LINE SDK `AsyncMessagingApi` + `AsyncApiClient`
+- [x] `push_text` / `push_flex` / `push_prediction_notification` / `push_results_notification` / `push_weekly_report` / `push_test_message`
+- [x] 全送信を NotificationLog に記録、LINE未設定時は graceful skip
+- [x] `line_templates.py` 新規作成: Flex Message テンプレート4種
+  - `build_prediction_flex()` — AI予想サマリー
+  - `build_results_flex()` — レース結果サマリー
+  - `build_weekly_report_flex()` — 週次レポート
+  - `build_interactive_flex()` — 汎用ボタン付き（Step 5/6 の土台）
 
-### データ取得（2/21・2/22）
-- [x] 2/21(土) 出馬表: 36レース、530頭
-- [x] 2/21(土) オッズ: 242件取得
-- [x] 2/21(土) AI予想: 530頭分
-- [x] 2/22(日) 出馬表: 36レース、497頭（前回セッションで取得済み）
-- [x] 2/22(日) AI予想: 497頭分（前回セッションで取得済み）
-- [ ] 2/22(日) オッズ: 未配信のため未取得
+**Phase 3: APIエンドポイント**
+- [x] `notifications.py` 全面書き換え
+  - `POST /webhook` — LINE Webhook受信（WebhookParser + 署名検証）
+  - `POST /test` — テスト通知送信
+  - `GET /logs` — 通知ログ一覧（ページネーション付き）
+- [x] `schemas/notification.py` 新規作成
 
-### バグ修正
-- [x] React key重複エラー（ワイド推奨のkey修正）
-- [x] uvicorn/nodeゾンビプロセスによるAPIキャッシュ問題解消
-- [x] ENOENT `.next/server/app/races/page.js` エラー修正
+**Phase 4: スケジューラ連携**
+- [x] `jobs.py` に `job_notify_prediction`（毎日 19:00 JST）追加
+- [x] `jobs.py` に `job_notify_results`（毎日 20:00 JST）追加
+- [x] `register_jobs` で計7ジョブ登録
 
-### 未対応・次回やること
-- [ ] 2/22 オッズ取得（朝以降にnetkeiba配信開始後）
-- [ ] 複数回オッズ取得でオッズ変動グラフ動作確認
-- [ ] racecourse_name / race_name が null の問題（shutubaパーサーCSS selector修正）
-- [ ] weatherの末尾スラッシュ除去（"晴/" → "晴"）
-- [ ] 予想精度: 現モデルは2021年以前データで学習済み。最新データでの再学習は将来課題
-- [ ] Step C: LINE通知システム（方針書のStep 4）
+**Phase 5: 動作確認**
+- [x] `uv sync` — 依存関係インストール成功
+- [x] `alembic upgrade head` — マイグレーション適用成功
+- [x] LINE SDK インポート確認 OK
+- [x] テンプレート生成 + FlexContainer.from_dict() 変換 OK
+
+### 次にやること（LINE Developer Console セットアップ）
+- [ ] https://developers.line.biz/ でチャネル作成
+- [ ] Channel Secret / Channel Access Token を取得
+- [ ] `.env` に `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_USER_ID` を設定
+- [ ] サーバー再起動後 `POST /api/v1/notifications/test` でテスト通知確認
+- [ ] ngrok で Webhook URL を公開し、LINE Developer Console に設定
+- [ ] PostbackEvent 受信の動作確認
 
 ---
 
@@ -75,7 +80,7 @@
 ```
 Step A: netkeiba スクレイピング構築               ✅ 完了
 Step B: フロントエンド機能大幅拡張（13機能+馬画像）     ✅ 完了
-Step C: LINE通知システム（方針書のStep 4）            ← 次にやる
+Step C: LINE通知システム（方針書のStep 4）            ✅ コード実装完了（要: LINE Console設定）
 Step D: JRA-VAN連携追加（3ヶ月後目安）
 Step E: LINEでJRA-VAN同期リマインダー通知
 ```
@@ -185,7 +190,7 @@ frontend/src/app/bets/page.tsx
 
 ### 未着手ステップ
 
-- [ ] **Step 4:** LINE通知システムの構築
+- [x] **Step 4:** LINE通知システムの構築（コード実装完了、要LINE Console設定）
 - [ ] **Step 5:** 自動レポート生成（週次・月次・3ヶ月次）
 - [ ] **Step 6:** モデル自動再学習・切り替え（MLOps）
 

@@ -11,7 +11,9 @@ import datetime
 import logging
 import uuid
 
-from sqlalchemy import create_engine, select, update
+import re
+
+from sqlalchemy import and_, create_engine, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,28 @@ from app.config import settings
 from app.models import Horse, Jockey, OddsSnapshot, Race, RaceEntry, ScrapeLog, Trainer
 
 logger = logging.getLogger(__name__)
+
+# Race ID venue code mapping: YYYYVVCCRRNN (VV = venue code)
+_VENUE_CODE_MAP = {
+    "01": "札幌",
+    "02": "函館",
+    "03": "福島",
+    "04": "新潟",
+    "05": "東京",
+    "06": "中山",
+    "07": "中京",
+    "08": "京都",
+    "09": "阪神",
+    "10": "小倉",
+}
+
+
+def _racecourse_from_race_id(race_id_str: str) -> str | None:
+    """Derive racecourse name from race_id code (YYYYVVCCRRNN)."""
+    if len(race_id_str) >= 6:
+        venue_code = race_id_str[4:6]
+        return _VENUE_CODE_MAP.get(venue_code)
+    return None
 
 
 def _get_engine():
@@ -139,6 +163,157 @@ def _upsert_trainer(session: Session, name: str) -> uuid.UUID:
 
 
 # ---------------------------------------------------------------------------
+# store_race_stubs (from race_list calendar scan)
+# ---------------------------------------------------------------------------
+
+_SURFACE_MAP = {
+    "芝": "芝",
+    "ダ": "ダート",
+}
+
+
+def _parse_course_info(course_info: str | None) -> tuple[str | None, int | None]:
+    """Parse course_info like 'ダ1400m' into (surface, distance_m)."""
+    if not course_info:
+        return None, None
+    m = re.match(r"(芝|ダ)(\d+)m?", course_info.strip())
+    if not m:
+        return None, None
+    surface = _SURFACE_MAP.get(m.group(1), m.group(1))
+    distance = int(m.group(2))
+    return surface, distance
+
+
+def store_race_stubs(race_list: list[dict], race_date: datetime.date) -> int:
+    """Create stub Race records from race_list data (lightweight calendar scan).
+
+    Only creates records that don't already exist.
+    Sets stub_only=True for new records. Existing records are not overwritten.
+    Returns number of stubs created.
+    """
+    engine = _get_engine()
+
+    with Session(engine) as session:
+        log_id = _log_start(session, "calendar_stub", race_date)
+
+        try:
+            count = 0
+            for race_info in race_list:
+                race_id_str = race_info.get("race_id")
+                if not race_id_str:
+                    continue
+
+                # Skip if race already exists
+                existing = session.execute(
+                    select(Race.id).where(Race.race_id == race_id_str)
+                ).first()
+                if existing:
+                    # Update head_count if we have it and it's missing
+                    if race_info.get("head_count"):
+                        session.execute(
+                            update(Race)
+                            .where(Race.id == existing[0])
+                            .values(head_count=race_info["head_count"])
+                        )
+                    continue
+
+                race_number = race_info.get("race_number")
+                if race_number is None and len(race_id_str) >= 12:
+                    try:
+                        race_number = int(race_id_str[-2:])
+                    except ValueError:
+                        pass
+
+                racecourse_name = _racecourse_from_race_id(race_id_str)
+                surface, distance_m = _parse_course_info(race_info.get("course_info"))
+                post_time = _parse_post_time(race_info.get("post_time"))
+
+                race_uuid = uuid.uuid4()
+                stmt = pg_insert(Race).values(
+                    id=race_uuid,
+                    race_id=race_id_str,
+                    race_date=race_date,
+                    race_number=race_number,
+                    race_name=race_info.get("race_name"),
+                    surface=surface,
+                    distance_m=distance_m,
+                    racecourse_name=racecourse_name,
+                    head_count=race_info.get("head_count"),
+                    post_time=post_time,
+                    stub_only=True,
+                    data_source="calendar_stub",
+                )
+                stmt = stmt.on_conflict_do_nothing(index_elements=["race_id"])
+                session.execute(stmt)
+                count += 1
+
+            _log_finish(session, log_id, "success", count)
+            session.commit()
+            logger.info(
+                "Stored %d race stubs for %s", count, race_date.isoformat()
+            )
+            return count
+
+        except Exception as e:
+            _log_finish(session, log_id, "error", 0, str(e))
+            session.commit()
+            raise
+
+
+# ---------------------------------------------------------------------------
+# DB query helpers (for scheduler jobs)
+# ---------------------------------------------------------------------------
+
+
+def get_races_without_entries(target_date: datetime.date) -> list[str]:
+    """Get race_ids for a date where stub_only=True (no entries yet)."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        rows = session.execute(
+            select(Race.race_id).where(
+                and_(Race.race_date == target_date, Race.stub_only == True)  # noqa: E712
+            )
+        ).all()
+        return [r[0] for r in rows]
+
+
+def get_race_ids_for_date(target_date: datetime.date) -> list[str]:
+    """Get all race_ids for a date."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        rows = session.execute(
+            select(Race.race_id).where(Race.race_date == target_date)
+        ).all()
+        return [r[0] for r in rows]
+
+
+def get_races_needing_results(target_date: datetime.date) -> list[str]:
+    """Get race_ids for a date that have entries but no finish results yet."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        from sqlalchemy import exists
+
+        subq = (
+            select(RaceEntry.id)
+            .where(
+                RaceEntry.race_id == Race.id,
+                RaceEntry.finish_position.is_not(None),
+            )
+            .correlate(Race)
+        )
+        rows = session.execute(
+            select(Race.race_id).where(
+                and_(
+                    Race.race_date == target_date,
+                    Race.stub_only == False,  # noqa: E712
+                    ~exists(subq),
+                )
+            )
+        ).all()
+        return [r[0] for r in rows]
+
+
+# ---------------------------------------------------------------------------
 # store_shutuba
 # ---------------------------------------------------------------------------
 
@@ -241,6 +416,11 @@ def _upsert_race(
     race_info = shutuba_data.get("race_info", {})
     post_time = _parse_post_time(shutuba_data.get("post_time"))
 
+    # Derive racecourse_name from race_id if not in parsed data
+    racecourse_name = race_info.get("racecourse_name") or _racecourse_from_race_id(
+        race_id_str
+    )
+
     row = session.execute(select(Race.id).where(Race.race_id == race_id_str)).first()
     if row:
         # Update race info if we have new data
@@ -254,8 +434,9 @@ def _upsert_race(
                 direction=race_info.get("direction"),
                 weather=race_info.get("weather"),
                 track_condition=race_info.get("track_condition"),
-                racecourse_name=race_info.get("racecourse_name"),
+                racecourse_name=racecourse_name,
                 post_time=post_time or Race.post_time,
+                stub_only=False,
                 data_source="scrape",
             )
         )
@@ -281,8 +462,9 @@ def _upsert_race(
         direction=race_info.get("direction"),
         weather=race_info.get("weather"),
         track_condition=race_info.get("track_condition"),
-        racecourse_name=race_info.get("racecourse_name"),
+        racecourse_name=racecourse_name,
         post_time=post_time,
+        stub_only=False,
         data_source="scrape",
     )
     stmt = stmt.on_conflict_do_nothing(index_elements=["race_id"])

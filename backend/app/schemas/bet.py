@@ -21,6 +21,19 @@ class BetRecordUpdate(BaseModel):
     note: str | None = None
 
 
+class RaceResultEntry(BaseModel):
+    finish_position: int
+    horse_name: str
+
+
+class BetRaceInfo(BaseModel):
+    race_number: int | None = None
+    racecourse_name: str | None = None
+    race_name: str | None = None
+    race_id_str: str | None = None
+    result_top3: list[RaceResultEntry] = []
+
+
 class BetRecordResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -34,6 +47,7 @@ class BetRecordResponse(BaseModel):
     is_hit: bool | None = None
     note: str | None = None
     created_at: datetime.datetime
+    race_info: BetRaceInfo | None = None
 
 
 class BetListResponse(BaseModel):

@@ -66,7 +66,7 @@ def parse_shutuba(html: str, race_id: str) -> dict:
     result: dict = {"race_id": race_id, "entries": []}
 
     # Race name
-    name_el = soup.select_one("div.RaceName")
+    name_el = soup.select_one(".RaceName")
     result["race_name"] = name_el.get_text(strip=True) if name_el else None
 
     # Race info (surface, distance, etc.)
@@ -111,26 +111,28 @@ def _parse_race_info(soup: BeautifulSoup) -> dict:
         if m_dir:
             info["direction"] = m_dir.group(1)
 
-        # Weather
-        m_weather = re.search(r"天候\s*[:：]\s*(\S+)", text)
+        # Weather: stop at "/" or whitespace
+        m_weather = re.search(r"天候\s*[:：]\s*([^\s/]+)", text)
         if m_weather:
             info["weather"] = m_weather.group(1)
 
-        # Track condition
-        m_cond = re.search(r"(芝|ダート)\s*[:：]\s*(\S+)", text)
-        if m_cond:
-            info["track_condition"] = m_cond.group(2)
+        # Track condition: match "芝:良" or "ダート:稍重" AFTER distance pattern
+        # Use findall to get all "surface:condition" pairs, take the one that looks like a condition
+        for m_cond in re.finditer(r"(芝|ダート)\s*[:：]\s*([^\s/]+)", text):
+            val = m_cond.group(2)
+            # Skip distance matches like "2400m"
+            if not re.match(r"\d+m?$", val):
+                info["track_condition"] = val
+                break
 
     # RaceData02 contains racecourse, race number, etc.
     data02 = soup.select_one("div.RaceData02")
     if data02:
-        spans = data02.select("span")
-        for span in spans:
-            text = span.get_text(strip=True)
-            # Racecourse name
-            m_course = re.match(r"(\d+)回(\S+?)(\d+)日目", text)
-            if m_course:
-                info["racecourse_name"] = m_course.group(2)
+        # Use concatenated text (spans may be split: "1回", "東京", "8日目")
+        full_text = data02.get_text(strip=True)
+        m_course = re.search(r"(\d+)回(\S+?)(\d+)日目", full_text)
+        if m_course:
+            info["racecourse_name"] = m_course.group(2)
 
     return info
 

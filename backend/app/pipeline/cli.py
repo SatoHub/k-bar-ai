@@ -192,9 +192,11 @@ def scrape_shutuba(
                 rid = race_info["race_id"]
                 typer.echo(f"  {rid} ({race_info.get('race_name', '?')})...")
                 shutuba = await nk.scrape_shutuba(rid)
-                # Merge post_time from race_list into shutuba data
+                # Merge data from race_list into shutuba data
                 if race_info.get("post_time"):
                     shutuba["post_time"] = race_info["post_time"]
+                if race_info.get("race_name") and not shutuba.get("race_name"):
+                    shutuba["race_name"] = race_info["race_name"]
                 count = store_shutuba(shutuba, target_date)
                 total += count
                 typer.echo(f"    -> {count} entries stored")

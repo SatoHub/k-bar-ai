@@ -12,7 +12,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
@@ -24,6 +24,7 @@ class BetRecord(Base):
     race_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("races.id", ondelete="SET NULL"), nullable=True
     )
+    race: Mapped["Race | None"] = relationship(lazy="joined")  # noqa: F821
     bet_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     bet_type: Mapped[str] = mapped_column(String(16), nullable=False)
     horse_names: Mapped[str] = mapped_column(Text, nullable=False)

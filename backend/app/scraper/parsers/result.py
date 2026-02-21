@@ -68,7 +68,7 @@ def parse_result(html: str, race_id: str) -> dict:
     result_data: dict = {"race_id": race_id, "entries": []}
 
     # Race name
-    name_el = soup.select_one("div.RaceName")
+    name_el = soup.select_one(".RaceName")
     result_data["race_name"] = name_el.get_text(strip=True) if name_el else None
 
     # Race info
@@ -104,7 +104,7 @@ def _parse_race_info(soup: BeautifulSoup) -> dict:
         if m_dir:
             info["direction"] = m_dir.group(1)
 
-        m_weather = re.search(r"天候\s*[:：]\s*(\S+)", text)
+        m_weather = re.search(r"天候\s*[:：]\s*([^\s/]+)", text)
         if m_weather:
             info["weather"] = m_weather.group(1)
 
@@ -114,11 +114,11 @@ def _parse_race_info(soup: BeautifulSoup) -> dict:
 
     data02 = soup.select_one("div.RaceData02")
     if data02:
-        for span in data02.select("span"):
-            text = span.get_text(strip=True)
-            m_course = re.match(r"(\d+)回(\S+?)(\d+)日目", text)
-            if m_course:
-                info["racecourse_name"] = m_course.group(2)
+        # Use concatenated text (spans may be split: "1回", "東京", "8日目")
+        full_text = data02.get_text(strip=True)
+        m_course = re.search(r"(\d+)回(\S+?)(\d+)日目", full_text)
+        if m_course:
+            info["racecourse_name"] = m_course.group(2)
 
     return info
 

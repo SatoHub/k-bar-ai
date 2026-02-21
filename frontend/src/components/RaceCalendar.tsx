@@ -50,9 +50,11 @@ export default function RaceCalendar({
   const daysInMonth = new Date(year, month, 0).getDate();
 
   const raceCountMap = new Map<number, number>();
+  const hasEntriesMap = new Map<number, boolean>();
   for (const d of days) {
     const dayNum = parseInt(d.date.split("-")[2], 10);
     raceCountMap.set(dayNum, d.race_count);
+    hasEntriesMap.set(dayNum, d.has_entries ?? false);
   }
 
   const totalRaces = days.reduce((sum, d) => sum + d.race_count, 0);
@@ -144,8 +146,10 @@ export default function RaceCalendar({
 
               const dateStr = `${yearStr}-${monthStr}-${String(day).padStart(2, "0")}`;
               const count = raceCountMap.get(day) ?? 0;
+              const hasEntries = hasEntriesMap.get(day) ?? false;
               const isSelected = selectedDate === dateStr;
               const hasRaces = count > 0;
+              const isStubOnly = hasRaces && !hasEntries;
 
               return (
                 <button
@@ -158,7 +162,9 @@ export default function RaceCalendar({
                     backgroundColor: isSelected
                       ? "var(--accent)"
                       : hasRaces
-                        ? "var(--bg-elevated)"
+                        ? isStubOnly
+                          ? "transparent"
+                          : "var(--bg-elevated)"
                         : "transparent",
                     color: isSelected
                       ? "#fff"
@@ -166,6 +172,12 @@ export default function RaceCalendar({
                         ? "var(--text-primary)"
                         : "var(--text-muted)",
                     cursor: hasRaces ? "pointer" : "default",
+                    ...(isStubOnly && !isSelected
+                      ? {
+                          outline: "1px dashed var(--accent)",
+                          outlineOffset: "-1px",
+                        }
+                      : {}),
                   }}
                 >
                   {day}
@@ -173,8 +185,14 @@ export default function RaceCalendar({
                     <span
                       className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold"
                       style={{
-                        backgroundColor: isSelected ? "#fff" : "var(--accent)",
-                        color: isSelected ? "var(--accent)" : "#fff",
+                        backgroundColor: isSelected
+                          ? "#fff"
+                          : isStubOnly
+                            ? "var(--text-muted)"
+                            : "var(--accent)",
+                        color: isSelected
+                          ? "var(--accent)"
+                          : "#fff",
                       }}
                     >
                       {count > 99 ? "+" : count}
@@ -185,9 +203,30 @@ export default function RaceCalendar({
             })}
           </div>
 
+          {/* Legend */}
+          <div
+            className="mt-2 flex items-center justify-center gap-3 text-[10px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded"
+                style={{ backgroundColor: "var(--bg-elevated)" }}
+              />
+              出馬表あり
+            </span>
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded"
+                style={{ outline: "1px dashed var(--accent)", outlineOffset: "-1px" }}
+              />
+              予定のみ
+            </span>
+          </div>
+
           {/* Summary */}
           <div
-            className="mt-2 text-center text-xs"
+            className="mt-1 text-center text-xs"
             style={{ color: "var(--text-muted)" }}
           >
             {totalRaces > 0

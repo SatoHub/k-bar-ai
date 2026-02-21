@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   fetchBets,
   fetchBetSummary,
@@ -14,7 +15,13 @@ const BET_TYPE_LABELS: Record<string, string> = {
   tansho: "単勝",
   fukusho: "複勝",
   umaren: "馬連",
+  umatan: "馬単",
+  wide: "ワイド",
+  sanrenpuku: "3連複",
+  sanrentan: "3連単",
 };
+
+const POSITION_MARKS = ["", "1着", "2着", "3着"];
 
 export default function BetsPage() {
   const [items, setItems] = useState<BetRecord[]>([]);
@@ -153,18 +160,21 @@ export default function BetsPage() {
                   }}
                 >
                   <th className="px-3 py-2">日付</th>
+                  <th className="px-3 py-2">レース</th>
                   <th className="px-3 py-2">馬券種</th>
                   <th className="px-3 py-2">馬名</th>
-                  <th className="px-3 py-2">掛け金</th>
-                  <th className="px-3 py-2">オッズ</th>
-                  <th className="px-3 py-2">払戻</th>
-                  <th className="px-3 py-2">的中</th>
+                  <th className="px-3 py-2 text-right">掛け金</th>
+                  <th className="px-3 py-2 text-right">オッズ</th>
+                  <th className="px-3 py-2 text-right">払戻</th>
+                  <th className="px-3 py-2 text-center">的中</th>
+                  <th className="px-3 py-2">レース結果</th>
                   <th className="px-3 py-2">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((bet) => {
                   const isEditing = editingId === bet.id;
+                  const ri = bet.race_info;
                   return (
                     <tr
                       key={bet.id}
@@ -176,29 +186,66 @@ export default function BetsPage() {
                             : undefined,
                       }}
                     >
+                      {/* 日付 */}
                       <td
                         className="px-3 py-2"
                         style={{ color: "var(--text-secondary)" }}
                       >
                         {bet.bet_date}
                       </td>
+
+                      {/* レース情報 */}
+                      <td className="px-3 py-2">
+                        {ri ? (
+                          <Link
+                            href={`/races/${ri.race_id_str}`}
+                            className="hover:underline"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            <span className="font-medium">
+                              {ri.racecourse_name ?? ""}
+                              {ri.race_number != null ? ` ${ri.race_number}R` : ""}
+                            </span>
+                            {ri.race_name && (
+                              <span
+                                className="ml-1 text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                {ri.race_name}
+                              </span>
+                            )}
+                          </Link>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }}>---</span>
+                        )}
+                      </td>
+
+                      {/* 馬券種 */}
                       <td className="px-3 py-2">
                         {BET_TYPE_LABELS[bet.bet_type] ?? bet.bet_type}
                       </td>
+
+                      {/* 馬名 */}
                       <td
                         className="px-3 py-2 font-medium"
                         style={{ color: "var(--text-primary)" }}
                       >
                         {bet.horse_names}
                       </td>
+
+                      {/* 掛け金 */}
                       <td className="px-3 py-2 text-right tabular-nums">
                         ¥{bet.amount_yen.toLocaleString()}
                       </td>
+
+                      {/* オッズ */}
                       <td className="px-3 py-2 text-right tabular-nums">
                         {bet.odds_at_bet !== null
                           ? Number(bet.odds_at_bet).toFixed(1)
                           : "---"}
                       </td>
+
+                      {/* 払戻 */}
                       <td className="px-3 py-2 text-right tabular-nums">
                         {isEditing ? (
                           <input
@@ -218,6 +265,8 @@ export default function BetsPage() {
                           "---"
                         )}
                       </td>
+
+                      {/* 的中 */}
                       <td className="px-3 py-2 text-center">
                         {isEditing ? (
                           <input
@@ -233,16 +282,65 @@ export default function BetsPage() {
                           "---"
                         )}
                       </td>
+
+                      {/* レース結果 (上位3着) */}
+                      <td className="px-3 py-2">
+                        {ri && ri.result_top3.length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            {ri.result_top3.map((r) => (
+                              <span
+                                key={r.finish_position}
+                                className="text-xs"
+                                style={{ color: "var(--text-secondary)" }}
+                              >
+                                <span
+                                  className="inline-block w-7 text-right font-medium tabular-nums mr-1"
+                                  style={{
+                                    color:
+                                      r.finish_position === 1
+                                        ? "var(--yellow)"
+                                        : r.finish_position === 2
+                                          ? "var(--text-secondary)"
+                                          : "var(--text-muted)",
+                                  }}
+                                >
+                                  {POSITION_MARKS[r.finish_position] ?? `${r.finish_position}着`}
+                                </span>
+                                {r.horse_name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span
+                            className="text-xs"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            未確定
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 操作 */}
                       <td className="px-3 py-2">
                         {isEditing ? (
-                          <button
-                            type="button"
-                            onClick={saveEdit}
-                            className="cursor-pointer text-xs font-medium"
-                            style={{ color: "var(--accent)" }}
-                          >
-                            保存
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={saveEdit}
+                              className="cursor-pointer text-xs font-medium"
+                              style={{ color: "var(--accent)" }}
+                            >
+                              保存
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              className="cursor-pointer text-xs"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              取消
+                            </button>
+                          </div>
                         ) : (
                           <button
                             type="button"

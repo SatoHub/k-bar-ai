@@ -2,6 +2,7 @@ import Link from "next/link";
 import BetSummaryCard from "@/components/BetSummaryCard";
 import DataStatusCard from "@/components/DataStatusCard";
 import ModelMetricsCard from "@/components/ModelMetricsCard";
+import SchedulerStatus from "@/components/SchedulerStatus";
 
 // Step icons as SVG components
 function IconDatabase() {
@@ -178,6 +179,9 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
+
+      {/* Scheduler status */}
+      <SchedulerStatus />
 
       {/* Bet summary */}
       <BetSummaryCard />

@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import case, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Race
@@ -11,9 +11,19 @@ async def get_calendar(
     year: int,
     month: int,
 ) -> list[dict]:
-    """Get race counts per day for a given year-month."""
+    """Get race counts per day for a given year-month.
+
+    Returns list of dicts with date, race_count, and has_entries.
+    has_entries is True if at least one race on that day has stub_only=False.
+    """
     query = (
-        select(Race.race_date, func.count(Race.id).label("race_count"))
+        select(
+            Race.race_date,
+            func.count(Race.id).label("race_count"),
+            func.count(
+                case((Race.stub_only == False, Race.id))  # noqa: E712
+            ).label("entries_count"),
+        )
         .where(
             extract("year", Race.race_date) == year,
             extract("month", Race.race_date) == month,
@@ -23,7 +33,12 @@ async def get_calendar(
     )
     result = await session.execute(query)
     return [
-        {"date": row.race_date, "race_count": row.race_count} for row in result.all()
+        {
+            "date": row.race_date,
+            "race_count": row.race_count,
+            "has_entries": (row.entries_count or 0) > 0,
+        }
+        for row in result.all()
     ]
 
 
