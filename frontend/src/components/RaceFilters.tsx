@@ -142,7 +142,7 @@ export default function RaceFilters({
         </div>
 
         {/* Specific date */}
-        <div className="col-span-2 min-w-0 flex flex-col gap-1 sm:col-span-1">
+        <div className="min-w-0 flex flex-col gap-1">
           <label
             htmlFor="filter-date"
             className="text-xs sm:text-sm font-medium"
@@ -161,7 +161,7 @@ export default function RaceFilters({
         </div>
 
         {/* Racecourse */}
-        <div className="col-span-2 min-w-0 flex flex-col gap-1 sm:col-span-1">
+        <div className="min-w-0 flex flex-col gap-1">
           <label
             htmlFor="filter-racecourse"
             className="text-xs sm:text-sm font-medium"

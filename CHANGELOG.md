@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
   - Header: モバイル用ハンバーガーメニュー追加（md未満でドロワー表示）
   - layout: モバイル時のパディング最適化（px-3 py-4）
   - レース詳細/シミュレート: オッズ更新日時をモバイルで非表示化
+  - RaceTable: モバイルでカードレイアウトに切替（10列テーブル→コンパクトカード）
+  - RaceFilters: モバイルで2列グリッドレイアウト（横はみ出し解消）
+  - RaceCalendar: overflow-hidden追加、モバイルpadding最適化
+- **Playwright E2Eテスト** — PC/SP両方のスモークテスト＋横はみ出しチェック追加
 
 ### Fixed
 - **React duplicate key エラー修正** — `AiRecommendations.tsx`, `BettingSimulator.tsx` で `horse_id` のみを key に使用していたのを `horse_id-idx` に変更し、同一馬が重複した場合の警告を解消
