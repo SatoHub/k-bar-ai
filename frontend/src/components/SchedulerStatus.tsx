@@ -107,10 +107,13 @@ export default function SchedulerStatus() {
       return;
     }
 
-    // ポーリング: 2秒間隔 × 最大5回で last_run の変化を検知
+    // ポーリング: 3秒間隔 × 最大40回（2分）で last_run の変化を検知
+    const MAX_POLLS = 40;
+    const POLL_INTERVAL = 3000;
     let found = false;
-    for (let i = 0; i < 5; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
+    let notifiedRunning = false;
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
       const freshStatus = await load();
       if (!freshStatus) continue;
 
@@ -128,10 +131,16 @@ export default function SchedulerStatus() {
         }
         break;
       }
+
+      // 15秒経過で中間フィードバック
+      if (!notifiedRunning && i * POLL_INTERVAL >= 15000) {
+        notifiedRunning = true;
+        addToast("warning", "処理中...完了まで少々お待ちください");
+      }
     }
 
     if (!found) {
-      addToast("warning", "実行中...しばらくお待ちください");
+      addToast("warning", "ジョブがまだ実行中です。ステータスは自動更新されます");
     }
 
     setTriggering(null);
