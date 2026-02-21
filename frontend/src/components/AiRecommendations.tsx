@@ -220,7 +220,7 @@ export default function AiRecommendations({
         {/* Recommended horses */}
         <div className="space-y-1.5">
           {recommended.map((p, idx) => (
-            <div key={p.horse_id} className="flex items-center gap-2">
+            <div key={`${p.horse_id}-${idx}`} className="flex items-center gap-2">
               <span
                 className="text-sm font-bold"
                 style={{ color: RANK_COLORS[idx], minWidth: "1rem", textAlign: "center" }}
@@ -349,7 +349,7 @@ export default function AiRecommendations({
         <div className="flex flex-wrap gap-2">
           {top5.map((p, idx) => (
             <div
-              key={p.horse_id}
+              key={`${p.horse_id}-${idx}`}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5"
               style={{
                 backgroundColor: idx === 0 ? "rgba(245,158,11,0.1)" : "rgba(255,255,255,0.03)",

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **React duplicate key エラー修正** — `AiRecommendations.tsx`, `BettingSimulator.tsx` で `horse_id` のみを key に使用していたのを `horse_id-idx` に変更し、同一馬が重複した場合の警告を解消
+- **GitHub Actions deploy.yml** — `docker compose` コマンドに `--env-file .env` を追加（Docker Compose v2 の .env 解決パス問題対応）
+
 ### Added
 - **AI予想成績ページ** (`/results`) — AI予想と実結果の比較・的中率分析
   - カレンダーUIで日付選択、競馬場タブでフィルタリング

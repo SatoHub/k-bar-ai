@@ -499,8 +499,8 @@ export default function BettingSimulator({
                             (h, i) => i !== idx && h === e.horse.id,
                           ),
                       )
-                      .map((e) => (
-                        <option key={e.horse.id} value={e.horse.id}>
+                      .map((e, i) => (
+                        <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
                           {e.post_position ?? "?"}. {e.horse.name}
                           {e.win_odds !== null
                             ? ` (${Number(e.win_odds).toFixed(1)}倍)`
