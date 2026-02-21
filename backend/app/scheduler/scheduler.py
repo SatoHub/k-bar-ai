@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -76,6 +77,7 @@ class SchedulerManager:
 
         self._scheduler = AsyncIOScheduler(
             timezone=settings.SCHEDULER_TIMEZONE,
+            job_defaults={"misfire_grace_time": 300, "coalesce": True},
         )
 
         register_jobs(self._scheduler, self)
@@ -107,7 +109,8 @@ class SchedulerManager:
         job = self._scheduler.get_job(job_id)
         if not job:
             return False
-        job.modify(next_run_time=datetime.now())
+        tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
+        job.modify(next_run_time=datetime.now(tz=tz))
         logger.info("Manually triggered job: %s", job_id)
         return True
 
