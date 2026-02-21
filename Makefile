@@ -1,4 +1,4 @@
-.PHONY: up down db-migrate db-upgrade db-downgrade ingest api dev test lint train predict verify-model evaluate
+.PHONY: up down db-migrate db-upgrade db-downgrade ingest api dev dev-all test lint train predict verify-model evaluate scrape-shutuba scrape-odds scrape-result playwright-install
 
 # Docker
 up:
@@ -34,6 +34,19 @@ verify-model:
 evaluate:
 	cd backend && uv run python -m app.pipeline.cli evaluate --model-version $(version)
 
+# Scraping
+scrape-shutuba:
+	cd backend && uv run python -m app.pipeline.cli scrape shutuba --date $(date)
+
+scrape-odds:
+	cd backend && uv run python -m app.pipeline.cli scrape odds --date $(date)
+
+scrape-result:
+	cd backend && uv run python -m app.pipeline.cli scrape result --date $(date)
+
+playwright-install:
+	cd backend && uv run playwright install chromium
+
 # API (use uvicorn directly to avoid Windows emoji encoding issues with fastapi CLI)
 api:
 	cd backend && uv run uvicorn app.main:app --reload --port 8000
@@ -45,6 +58,15 @@ verify:
 # Frontend
 dev:
 	cd frontend && npm run dev
+
+# Full dev environment (Docker + Backend API + Frontend)
+dev-all:
+	docker compose -f docker/docker-compose.yml --env-file .env up -d
+	cd backend && uv run alembic upgrade head
+	@echo "Starting backend API on :8000 and frontend on :3000..."
+	cd backend && uv run uvicorn app.main:app --reload --port 8000 &
+	cd frontend && npm run dev &
+	@echo "All services started. Backend: http://localhost:8000  Frontend: http://localhost:3000"
 
 # Quality
 test:

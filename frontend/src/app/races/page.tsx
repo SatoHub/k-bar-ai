@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   fetchRaces,
   fetchDataStatus,
   type RaceListItem,
 } from "@/lib/api";
+import { decodeRacecourse } from "@/lib/racecourse";
 import RaceFilters from "@/components/RaceFilters";
+import RaceCalendar from "@/components/RaceCalendar";
 import RaceTable from "@/components/RaceTable";
 import Pagination from "@/components/Pagination";
 
@@ -16,6 +18,8 @@ function RacesContent() {
   const searchParams = useSearchParams();
 
   const paramDate = searchParams.get("date") ?? "";
+  const paramYearMonth = searchParams.get("year_month") ?? "";
+  const paramWeek = searchParams.get("week") ?? "";
   const paramRacecourse = searchParams.get("racecourse") ?? "";
   const paramPage = Number(searchParams.get("page") ?? "1");
 
@@ -25,11 +29,33 @@ function RacesContent() {
   const [racecourses, setRacecourses] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataMaxMonth, setDataMaxMonth] = useState<string>("");
 
-  // Fetch racecourse list once
+  // Client-side racecourse tab filter (independent of URL params)
+  const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+
+  // Derive current year-month for calendar (from filter or default to latest data)
+  const defaultYearMonth = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  })();
+
+  const calendarYearMonth =
+    paramYearMonth ||
+    (paramDate ? paramDate.substring(0, 7) : "") ||
+    dataMaxMonth ||
+    defaultYearMonth;
+
+  // Fetch racecourse list + data range once
   useEffect(() => {
     fetchDataStatus()
-      .then((ds) => setRacecourses(ds.racecourses))
+      .then((ds) => {
+        setRacecourses(ds.racecourses);
+        // Default calendar to the latest month with data
+        if (ds.date_max) {
+          setDataMaxMonth(ds.date_max.substring(0, 7));
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -38,13 +64,18 @@ function RacesContent() {
     setLoading(true);
     setError(null);
     try {
-      const perPage = 20;
-      const res = await fetchRaces({
+      // When filtering by date, show all races (up to 50 per day max)
+      const perPage = paramDate ? 50 : 20;
+      const params = {
         date: paramDate || undefined,
+        year_month: !paramDate ? paramYearMonth || undefined : undefined,
+        week:
+          !paramDate && paramYearMonth && paramWeek ? paramWeek : undefined,
         racecourse: paramRacecourse || undefined,
         page: paramPage,
         per_page: perPage,
-      });
+      };
+      const res = await fetchRaces(params);
       setItems(res.items);
       setTotalPages(Math.max(1, Math.ceil(res.total / perPage)));
       setPage(res.page);
@@ -53,11 +84,39 @@ function RacesContent() {
     } finally {
       setLoading(false);
     }
-  }, [paramDate, paramRacecourse, paramPage]);
+  }, [paramDate, paramYearMonth, paramWeek, paramRacecourse, paramPage]);
 
   useEffect(() => {
     loadRaces();
   }, [loadRaces]);
+
+  // Reset course tab when filters change
+  useEffect(() => {
+    setSelectedCourse(null);
+  }, [paramDate, paramYearMonth, paramWeek, paramRacecourse]);
+
+  // Resolve racecourse name for each item (from DB or decoded from race_id)
+  function getCourseName(item: RaceListItem): string | null {
+    return item.racecourse_name ?? decodeRacecourse(item.race_id);
+  }
+
+  // Extract unique racecourse names for tabs
+  const availableCourses = useMemo(() => {
+    const courses = Array.from(
+      new Set(
+        items
+          .map(getCourseName)
+          .filter((n): n is string => n !== null && n !== ""),
+      ),
+    );
+    return courses;
+  }, [items]);
+
+  // Client-side filtered items
+  const filteredItems = useMemo(() => {
+    if (!selectedCourse) return items;
+    return items.filter((item) => getCourseName(item) === selectedCourse);
+  }, [items, selectedCourse]);
 
   function updateParams(updates: Record<string, string | undefined>) {
     const sp = new URLSearchParams(searchParams.toString());
@@ -71,50 +130,188 @@ function RacesContent() {
     router.push(`/races?${sp.toString()}`);
   }
 
-  function handleFilter(filters: { date?: string; racecourse?: string }) {
-    updateParams({ date: filters.date, racecourse: filters.racecourse, page: undefined });
+  function handleFilter(filters: {
+    date?: string;
+    year_month?: string;
+    week?: string;
+    racecourse?: string;
+  }) {
+    updateParams({
+      date: filters.date,
+      year_month: filters.year_month,
+      week: filters.week,
+      racecourse: filters.racecourse,
+      page: undefined,
+    });
+  }
+
+  function handleCalendarDayClick(dateStr: string) {
+    updateParams({
+      date: dateStr,
+      year_month: undefined,
+      week: undefined,
+      page: undefined,
+    });
   }
 
   function handlePageChange(newPage: number) {
     updateParams({ page: String(newPage) });
   }
 
+  // Count races per course for tab badges
+  function courseCount(course: string): number {
+    return items.filter((item) => getCourseName(item) === course).length;
+  }
+
   return (
     <>
-      <RaceFilters
-        racecourses={racecourses}
-        initialDate={paramDate}
-        initialRacecourse={paramRacecourse}
-        onFilter={handleFilter}
-      />
+      <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+        <div className="space-y-6">
+          <RaceFilters
+            racecourses={racecourses}
+            initialYearMonth={paramYearMonth}
+            initialWeek={paramWeek}
+            initialDate={paramDate}
+            initialRacecourse={paramRacecourse}
+            onFilter={handleFilter}
+          />
 
-      <div className="mt-6">
-        {loading ? (
-          <div
-            className="glass-card p-8 text-center"
-            style={{ color: "var(--text-muted)" }}
-          >
-            読み込み中...
+          {/* Calendar — mobile: above table, desktop: sidebar */}
+          <div className="lg:hidden">
+            <RaceCalendar
+              yearMonth={calendarYearMonth}
+              onDayClick={handleCalendarDayClick}
+              selectedDate={paramDate}
+            />
           </div>
-        ) : error ? (
-          <div
-            className="glass-card p-8 text-center"
-            style={{ color: "var(--red)" }}
-          >
-            {error}
-          </div>
-        ) : (
-          <>
-            <RaceTable items={items} />
-            <div className="mt-4">
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                onPageChange={handlePageChange}
-              />
+
+          {/* Racecourse tabs — only when viewing a specific date */}
+          {paramDate && availableCourses.length > 1 && (
+            <div
+              className="flex flex-wrap gap-1.5 rounded-xl p-2"
+              style={{
+                backgroundColor: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedCourse(null)}
+                className="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200"
+                style={{
+                  backgroundColor: selectedCourse === null
+                    ? "var(--accent)"
+                    : "transparent",
+                  color: selectedCourse === null ? "#fff" : "var(--text-secondary)",
+                  boxShadow: selectedCourse === null
+                    ? "0 2px 8px rgba(59,130,246,0.3)"
+                    : "none",
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedCourse !== null) {
+                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
+                    e.currentTarget.style.color = "var(--text-primary)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedCourse !== null) {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                    e.currentTarget.style.color = "var(--text-secondary)";
+                  }
+                }}
+              >
+                すべて
+                <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                  style={{
+                    backgroundColor: selectedCourse === null
+                      ? "rgba(255,255,255,0.25)"
+                      : "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {items.length}
+                </span>
+              </button>
+              {availableCourses.map((course) => (
+                <button
+                  key={course}
+                  type="button"
+                  onClick={() => setSelectedCourse(course)}
+                  className="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200"
+                  style={{
+                    backgroundColor: selectedCourse === course
+                      ? "var(--accent)"
+                      : "transparent",
+                    color: selectedCourse === course
+                      ? "#fff"
+                      : "var(--text-secondary)",
+                    boxShadow: selectedCourse === course
+                      ? "0 2px 8px rgba(59,130,246,0.3)"
+                      : "none",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedCourse !== course) {
+                      e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
+                      e.currentTarget.style.color = "var(--text-primary)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedCourse !== course) {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                      e.currentTarget.style.color = "var(--text-secondary)";
+                    }
+                  }}
+                >
+                  {course}
+                  <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor: selectedCourse === course
+                        ? "rgba(255,255,255,0.25)"
+                        : "rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    {courseCount(course)}
+                  </span>
+                </button>
+              ))}
             </div>
-          </>
-        )}
+          )}
+
+          {loading ? (
+            <div
+              className="glass-card p-8 text-center"
+              style={{ color: "var(--text-muted)" }}
+            >
+              読み込み中...
+            </div>
+          ) : error ? (
+            <div
+              className="glass-card p-8 text-center"
+              style={{ color: "var(--red)" }}
+            >
+              {error}
+            </div>
+          ) : (
+            <>
+              <RaceTable items={filteredItems} />
+              {!selectedCourse && (
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Calendar sidebar — desktop only */}
+        <div className="hidden lg:block">
+          <RaceCalendar
+            yearMonth={calendarYearMonth}
+            onDayClick={handleCalendarDayClick}
+            selectedDate={paramDate}
+          />
+        </div>
       </div>
     </>
   );
@@ -156,7 +353,6 @@ function GuideSection() {
           color: "var(--text-secondary)",
         }}
       >
-        {/* Filter guide */}
         <div className="mb-4">
           <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
             <span
@@ -168,15 +364,13 @@ function GuideSection() {
             フィルタで絞り込む
           </p>
           <p className="mt-1 ml-7">
-            上部の<b style={{ color: "var(--text-primary)" }}>「日付」</b>と
-            <b style={{ color: "var(--text-primary)" }}>「競馬場」</b>
-            で表示するレースを絞り込めます。
-            特定の開催日だけ見たい場合は日付を選択し、「検索」を押してください。
-            「クリア」で条件をリセットできます。
+            <b style={{ color: "var(--text-primary)" }}>「年月」</b>と
+            <b style={{ color: "var(--text-primary)" }}>「週」</b>
+            で月単位・週単位に絞り込めます。
+            右側のカレンダーからレースのある日をクリックしても絞り込めます。
           </p>
         </div>
 
-        {/* Table columns guide */}
         <div className="mb-4">
           <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
             <span
@@ -188,18 +382,12 @@ function GuideSection() {
             テーブルの見方
           </p>
           <ul className="mt-2 ml-7 space-y-1.5">
-            <li><b style={{ color: "var(--text-primary)" }}>日付</b> — レース開催日</li>
-            <li><b style={{ color: "var(--text-primary)" }}>競馬場</b> — 開催場名（東京、中山、阪神 など）</li>
-            <li><b style={{ color: "var(--text-primary)" }}>R</b> — 第何レースか（1R〜12R）</li>
-            <li><b style={{ color: "var(--text-primary)" }}>レース名</b> — クリックすると詳細ページへ移動し、<b style={{ color: "var(--text-primary)" }}>AI予測と出走結果</b>が確認できます</li>
-            <li><b style={{ color: "var(--text-primary)" }}>コース</b> — 「芝1600m」＝芝コース1600m、「ダ1200m」＝ダートコース1200m</li>
-            <li><b style={{ color: "var(--text-primary)" }}>天候</b> — 当日の天気（晴、曇、雨 など）</li>
-            <li><b style={{ color: "var(--text-primary)" }}>馬場状態</b> — 馬場のコンディション。<b style={{ color: "var(--text-primary)" }}>良</b>が最も乾いた状態、<b style={{ color: "var(--text-primary)" }}>稍重→重→不良</b>の順に水分を含みます</li>
-            <li><b style={{ color: "var(--text-primary)" }}>グレード</b> — 重賞レースの格付け（GI・GII・GIII など）。空欄は一般レースです</li>
+            <li><b style={{ color: "var(--text-primary)" }}>レース名</b> — クリックすると詳細ページへ移動</li>
+            <li><b style={{ color: "var(--text-primary)" }}>コース</b> — 「芝1600m」＝芝コース1600m</li>
+            <li><b style={{ color: "var(--text-primary)" }}>グレード</b> — 重賞レースの格付け（GI・GII・GIII）</li>
           </ul>
         </div>
 
-        {/* Tips */}
         <div>
           <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
             <span
@@ -211,9 +399,8 @@ function GuideSection() {
             おすすめの見方
           </p>
           <ul className="mt-2 ml-7 space-y-1.5">
-            <li>まずは<b style={{ color: "var(--text-primary)" }}>グレード列にGI・GIIなどが入っている重賞レース</b>を選ぶと、AI予測の精度を実感しやすいです</li>
-            <li>気になるレース名をクリックすると、<b style={{ color: "var(--text-primary)" }}>AIの予測順位・信頼度・判断根拠</b>と<b style={{ color: "var(--text-primary)" }}>実際の着順</b>を並べて確認できます</li>
-            <li>馬場状態が「重」「不良」のレースは波乱が起きやすく、AI予測がどう対応しているか比べてみるのも面白いです</li>
+            <li>重賞レースを選ぶと、AI予測の精度を実感しやすいです</li>
+            <li>馬場状態が「重」「不良」のレースは波乱が起きやすいです</li>
           </ul>
         </div>
       </div>

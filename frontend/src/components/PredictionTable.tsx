@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import type { PredictionEntry } from "@/lib/api";
 import ConfidenceBadge from "./ConfidenceBadge";
 import ExplanationCard from "./ExplanationCard";
+import ShapChart from "./ShapChart";
 
 type Props = {
   predictions: PredictionEntry[];
@@ -10,6 +13,8 @@ type Props = {
 };
 
 export default function PredictionTable({ predictions, modelVersion }: Props) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   if (predictions.length === 0) {
     return (
       <div
@@ -71,7 +76,7 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
               <th className="px-4 py-2 w-48">予測スコア</th>
               <th className="px-4 py-2 w-20">信頼度</th>
               <th className="px-4 py-2 w-20">実着順</th>
-              <th className="px-4 py-2 w-24">説明</th>
+              <th className="px-4 py-2 w-24">分析</th>
             </tr>
           </thead>
           <tbody>
@@ -82,6 +87,8 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
                 p.actual_finish !== null &&
                 p.actual_finish <= 3;
               const score = Number(p.predicted_score ?? 0);
+              const hasShap = p.shap_data && Object.keys(p.shap_data).length > 0;
+              const isExpanded = expandedId === p.id;
 
               return (
                 <tr
@@ -109,11 +116,23 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
                   >
                     {rank}
                   </td>
-                  <td
-                    className="px-4 py-2 font-medium"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {p.horse_name ?? "---"}
+                  <td className="px-4 py-2 font-medium">
+                    <Link
+                      href={`/horses/${p.horse_id}`}
+                      className="cursor-pointer"
+                      style={{
+                        color: "var(--accent)",
+                        transition: "color 200ms ease-out",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.color = "var(--accent-hover)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.color = "var(--accent)")
+                      }
+                    >
+                      {p.horse_name ?? "---"}
+                    </Link>
                   </td>
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-2">
@@ -148,7 +167,30 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
                     {p.actual_finish ?? "---"}
                   </td>
                   <td className="px-4 py-2">
-                    <ExplanationCard explanation={p.explanation} />
+                    <div className="space-y-1">
+                      {hasShap ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedId(isExpanded ? null : p.id)
+                          }
+                          className="cursor-pointer text-xs font-medium"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          {isExpanded ? "閉じる" : "SHAP分析"}
+                        </button>
+                      ) : (
+                        <ExplanationCard explanation={p.explanation} />
+                      )}
+                      {isExpanded && p.shap_data && (
+                        <div
+                          className="mt-2 rounded-lg p-3"
+                          style={{ backgroundColor: "var(--bg-elevated)" }}
+                        >
+                          <ShapChart shapData={p.shap_data} />
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

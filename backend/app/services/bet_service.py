@@ -37,8 +37,7 @@ async def update_bet(
         return None
 
     for key, value in data.items():
-        if value is not None:
-            setattr(bet, key, value)
+        setattr(bet, key, value)
     await session.commit()
     await session.refresh(bet)
     return bet

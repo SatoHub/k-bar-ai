@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 # --- Model Version ---
 
+
 class ModelVersionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,6 +40,7 @@ class ModelMetricsResponse(BaseModel):
 
 # --- Prediction ---
 
+
 class PredictionEntry(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -50,6 +52,7 @@ class PredictionEntry(BaseModel):
     confidence: str | None = None
     explanation: str | None = None
     actual_finish: int | None = None
+    shap_data: dict | None = None
 
 
 class RacePredictionResponse(BaseModel):

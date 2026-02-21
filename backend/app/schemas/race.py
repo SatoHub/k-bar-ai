@@ -10,6 +10,7 @@ class HorseBase(BaseModel):
     id: uuid.UUID
     name: str
     sex: str | None = None
+    netkeiba_id: str | None = None
 
 
 class JockeyBase(BaseModel):
@@ -59,6 +60,7 @@ class RaceListItem(BaseModel):
     racecourse_name: str | None = None
     race_number: int | None = None
     race_name: str | None = None
+    post_time: datetime.time | None = None
     surface: str | None = None
     distance_m: int | None = None
     weather: str | None = None
@@ -89,3 +91,48 @@ class DataStatusResponse(BaseModel):
     date_min: datetime.date | None = None
     date_max: datetime.date | None = None
     racecourses: list[str] = []
+
+
+# --- Odds schemas ---
+
+
+class OddsEntry(BaseModel):
+    post_position: int
+    horse_name: str | None = None
+    win_odds: float | None = None
+    win_favorite: int | None = None
+    fetched_at: str | None = None
+
+
+class OddsResponse(BaseModel):
+    race_id: str
+    entries: list[OddsEntry] = []
+    fetched_at: str | None = None
+
+
+class OddsHistoryPoint(BaseModel):
+    post_position: int
+    horse_name: str | None = None
+    win_odds: float
+    fetched_at: str | None = None
+
+
+class OddsHistoryResponse(BaseModel):
+    race_id: str
+    history: list[OddsHistoryPoint] = []
+
+
+# --- Aptitude schemas ---
+
+
+class AptitudeEntry(BaseModel):
+    horse_id: uuid.UUID
+    runs: int
+    wins: int
+    place_count: int
+    score: int
+
+
+class AptitudeResponse(BaseModel):
+    race_id: str
+    entries: list[AptitudeEntry] = []

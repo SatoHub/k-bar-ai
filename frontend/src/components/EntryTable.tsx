@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import type { RaceEntry } from "@/lib/api";
 
 type Props = {
   entries: RaceEntry[];
+  isUpcoming?: boolean;
 };
 
 const BRACKET_COLORS: Record<number, string> = {
@@ -53,26 +55,41 @@ function BracketCircle({ bracket }: { bracket: number | null }) {
   );
 }
 
-export default function EntryTable({ entries }: Props) {
-  const sorted = [...entries].sort((a, b) => {
-    if (a.finish_position === null && b.finish_position === null) return 0;
-    if (a.finish_position === null) return 1;
-    if (b.finish_position === null) return -1;
-    return a.finish_position - b.finish_position;
-  });
+export default function EntryTable({ entries, isUpcoming }: Props) {
+  const sorted = isUpcoming
+    ? [...entries].sort(
+        (a, b) => (a.post_position ?? 999) - (b.post_position ?? 999),
+      )
+    : [...entries].sort((a, b) => {
+        if (a.finish_position === null && b.finish_position === null) return 0;
+        if (a.finish_position === null) return 1;
+        if (b.finish_position === null) return -1;
+        return a.finish_position - b.finish_position;
+      });
 
   return (
     <div className="glass-card overflow-hidden">
       <div
-        className="px-4 py-3"
+        className="flex items-center gap-2 px-4 py-3"
         style={{ borderBottom: "1px solid var(--border)" }}
       >
         <h2
           className="text-base font-semibold"
           style={{ color: "var(--text-primary)" }}
         >
-          出走表 / 結果
+          {isUpcoming ? "出馬表" : "出走表 / 結果"}
         </h2>
+        {isUpcoming && (
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{
+              backgroundColor: "rgba(59,130,246,0.15)",
+              color: "var(--accent)",
+            }}
+          >
+            出走前
+          </span>
+        )}
       </div>
 
       <div className="overflow-x-auto">
@@ -92,12 +109,21 @@ export default function EntryTable({ entries }: Props) {
               <th className="px-3 py-2">調教師</th>
               <th className="px-3 py-2">馬齢</th>
               <th className="px-3 py-2">斤量</th>
-              <th className="px-3 py-2">着順</th>
-              <th className="px-3 py-2">タイム</th>
-              <th className="px-3 py-2">着差</th>
-              <th className="px-3 py-2">上がり3F</th>
-              <th className="px-3 py-2">オッズ</th>
-              <th className="px-3 py-2">人気</th>
+              {isUpcoming ? (
+                <>
+                  <th className="px-3 py-2">馬体重</th>
+                  <th className="px-3 py-2">増減</th>
+                </>
+              ) : (
+                <>
+                  <th className="px-3 py-2">着順</th>
+                  <th className="px-3 py-2">タイム</th>
+                  <th className="px-3 py-2">着差</th>
+                  <th className="px-3 py-2">上がり3F</th>
+                  <th className="px-3 py-2">オッズ</th>
+                  <th className="px-3 py-2">人気</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -125,11 +151,23 @@ export default function EntryTable({ entries }: Props) {
                 >
                   {e.post_position ?? "---"}
                 </td>
-                <td
-                  className="px-3 py-2 font-medium"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {e.horse.name}
+                <td className="px-3 py-2 font-medium">
+                  <Link
+                    href={`/horses/${e.horse.id}`}
+                    className="cursor-pointer"
+                    style={{
+                      color: "var(--accent)",
+                      transition: "color 200ms ease-out",
+                    }}
+                    onMouseEnter={(ev) =>
+                      (ev.currentTarget.style.color = "var(--accent-hover)")
+                    }
+                    onMouseLeave={(ev) =>
+                      (ev.currentTarget.style.color = "var(--accent)")
+                    }
+                  >
+                    {e.horse.name}
+                  </Link>
                 </td>
                 <td
                   className="px-3 py-2"
@@ -157,44 +195,77 @@ export default function EntryTable({ entries }: Props) {
                     ? `${Number(e.weight_carried_kg)}kg`
                     : "---"}
                 </td>
-                <td
-                  className="px-3 py-2 text-center font-medium"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {e.finish_position ?? e.finish_note ?? "---"}
-                </td>
-                <td
-                  className="px-3 py-2 text-right tabular-nums"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {formatTime(e.total_time_tenths)}
-                </td>
-                <td
-                  className="px-3 py-2 text-center"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {e.margin ?? "---"}
-                </td>
-                <td
-                  className="px-3 py-2 text-right tabular-nums"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {e.last_3f_time !== null
-                    ? Number(e.last_3f_time).toFixed(1)
-                    : "---"}
-                </td>
-                <td
-                  className="px-3 py-2 text-right tabular-nums"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {e.win_odds !== null ? Number(e.win_odds).toFixed(1) : "---"}
-                </td>
-                <td
-                  className="px-3 py-2 text-center"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {e.win_favorite ?? "---"}
-                </td>
+                {isUpcoming ? (
+                  <>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {e.horse_weight_kg !== null
+                        ? `${e.horse_weight_kg}kg`
+                        : "---"}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      style={{
+                        color:
+                          e.horse_weight_diff !== null && e.horse_weight_diff > 0
+                            ? "var(--red)"
+                            : e.horse_weight_diff !== null &&
+                                e.horse_weight_diff < 0
+                              ? "var(--accent)"
+                              : "var(--text-secondary)",
+                      }}
+                    >
+                      {e.horse_weight_diff !== null
+                        ? `${e.horse_weight_diff > 0 ? "+" : ""}${e.horse_weight_diff}`
+                        : "---"}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td
+                      className="px-3 py-2 text-center font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {e.finish_position ?? e.finish_note ?? "---"}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {formatTime(e.total_time_tenths)}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-center"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {e.margin ?? "---"}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {e.last_3f_time !== null
+                        ? Number(e.last_3f_time).toFixed(1)
+                        : "---"}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {e.win_odds !== null
+                        ? Number(e.win_odds).toFixed(1)
+                        : "---"}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-center"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {e.win_favorite ?? "---"}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>

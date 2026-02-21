@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     KAGGLE_USERNAME: str = ""
     KAGGLE_KEY: str = ""
 
+    LINE_CHANNEL_SECRET: str = ""
+    LINE_CHANNEL_ACCESS_TOKEN: str = ""
+
     @property
     def database_url(self) -> str:
         return (

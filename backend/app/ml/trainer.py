@@ -44,13 +44,15 @@ def _split_by_time(
     """Split into train (< cutoff_year) and test (>= cutoff_year)."""
     train = df[df["race_date"].dt.year < cutoff_year].copy()
     test = df[df["race_date"].dt.year >= cutoff_year].copy()
-    logger.info("Train: %d rows (%d-%d), Test: %d rows (%d-%d)",
-                len(train),
-                train["race_date"].dt.year.min(),
-                train["race_date"].dt.year.max(),
-                len(test),
-                test["race_date"].dt.year.min(),
-                test["race_date"].dt.year.max())
+    logger.info(
+        "Train: %d rows (%d-%d), Test: %d rows (%d-%d)",
+        len(train),
+        train["race_date"].dt.year.min(),
+        train["race_date"].dt.year.max(),
+        len(test),
+        test["race_date"].dt.year.min(),
+        test["race_date"].dt.year.max(),
+    )
     return train, test
 
 
@@ -93,12 +95,16 @@ def train_model(
     cat_cols = [c for c in CATEGORICAL_COLUMNS if c in X_train.columns]
 
     train_set = lgb.Dataset(
-        X_train_final, label=y_train_final,
-        categorical_feature=cat_cols, free_raw_data=False,
+        X_train_final,
+        label=y_train_final,
+        categorical_feature=cat_cols,
+        free_raw_data=False,
     )
     val_set = lgb.Dataset(
-        X_val, label=y_val,
-        categorical_feature=cat_cols, free_raw_data=False,
+        X_val,
+        label=y_val,
+        categorical_feature=cat_cols,
+        free_raw_data=False,
         reference=train_set,
     )
 
@@ -130,8 +136,12 @@ def train_model(
         "best_iteration": model.best_iteration,
     }
 
-    logger.info("Test metrics: accuracy=%.4f, F1=%.4f, ROC-AUC=%.4f",
-                metrics["accuracy"], metrics["f1"], metrics["roc_auc"])
+    logger.info(
+        "Test metrics: accuracy=%.4f, F1=%.4f, ROC-AUC=%.4f",
+        metrics["accuracy"],
+        metrics["f1"],
+        metrics["roc_auc"],
+    )
 
     # 7. Save model artifact
     all_features = FEATURE_COLUMNS + CATEGORICAL_COLUMNS
@@ -154,7 +164,8 @@ def train_model(
         mv = ModelVersion(
             id=uuid.uuid4(),
             version=version,
-            description=description or f"LightGBM binary classifier (cutoff={cutoff_year})",
+            description=description
+            or f"LightGBM binary classifier (cutoff={cutoff_year})",
             accuracy=metrics["accuracy"],
         )
         session.merge(mv)

@@ -56,12 +56,16 @@ def verify_predictions(version: str) -> dict:
     # Place hit: predicted_position <= 3 AND actual_position <= 3
     top3_predictions = df[df["predicted_position"] <= 3]
     place_hits = top3_predictions[top3_predictions["actual_position"] <= 3]
-    place_hit_rate = len(place_hits) / len(top3_predictions) if len(top3_predictions) > 0 else 0.0
+    place_hit_rate = (
+        len(place_hits) / len(top3_predictions) if len(top3_predictions) > 0 else 0.0
+    )
 
     # Win hit: predicted_position == 1 AND actual_position == 1
     top1_predictions = df[df["predicted_position"] == 1]
     win_hits = top1_predictions[top1_predictions["actual_position"] == 1]
-    win_hit_rate = len(win_hits) / len(top1_predictions) if len(top1_predictions) > 0 else 0.0
+    win_hit_rate = (
+        len(win_hits) / len(top1_predictions) if len(top1_predictions) > 0 else 0.0
+    )
 
     # Top-3 accuracy: for predicted top 3, what fraction actually finished top 3
     top3_accuracy = place_hit_rate
@@ -84,9 +88,14 @@ def verify_predictions(version: str) -> dict:
 
     logger.info(
         "Verification for %s: %d races, win=%.1f%% (%d/%d), place=%.1f%% (%d/%d)",
-        version, unique_races,
-        win_hit_rate * 100, len(win_hits), len(top1_predictions),
-        place_hit_rate * 100, len(place_hits), len(top3_predictions),
+        version,
+        unique_races,
+        win_hit_rate * 100,
+        len(win_hits),
+        len(top1_predictions),
+        place_hit_rate * 100,
+        len(place_hits),
+        len(top3_predictions),
     )
 
     return summary

@@ -95,9 +95,9 @@ def predict_race(
     model = artifact["model"]
     feature_columns = artifact["feature_columns"]
 
-    # Build feature matrix for prediction targets
+    # Build feature matrix for prediction targets (include upcoming races)
     logger.info("Building feature matrix for prediction...")
-    df = build_feature_matrix()
+    df = build_feature_matrix(include_upcoming=True)
 
     # Filter to target
     if race_id_str:
@@ -137,7 +137,9 @@ def predict_race(
     for i, (idx, row) in enumerate(df.iterrows()):
         score = float(y_prob[i])
         explanation = _generate_explanation(
-            shap_values[i], feature_columns, X.iloc[i],
+            shap_values[i],
+            feature_columns,
+            X.iloc[i],
         )
 
         # Confidence label
@@ -194,16 +196,18 @@ def _save_predictions(
     with Session(engine) as session:
         rows = []
         for r in results:
-            rows.append({
-                "id": uuid.uuid4(),
-                "race_id": r["race_uuid"],
-                "horse_id": r["horse_uuid"],
-                "model_version_id": model_version_uuid,
-                "predicted_position": r["predicted_position"],
-                "predicted_score": r["score"],
-                "explanation": r["explanation"],
-                "confidence": r["confidence"],
-            })
+            rows.append(
+                {
+                    "id": uuid.uuid4(),
+                    "race_id": r["race_uuid"],
+                    "horse_id": r["horse_uuid"],
+                    "model_version_id": model_version_uuid,
+                    "predicted_position": r["predicted_position"],
+                    "predicted_score": r["score"],
+                    "explanation": r["explanation"],
+                    "confidence": r["confidence"],
+                }
+            )
 
         if rows:
             stmt = pg_insert(PredictionLog.__table__).values(rows)

@@ -63,7 +63,9 @@ def upgrade() -> None:
 
     # --- Add columns to existing tables ---
 
-    op.add_column("races", sa.Column("data_source", sa.String(length=16), nullable=True))
+    op.add_column(
+        "races", sa.Column("data_source", sa.String(length=16), nullable=True)
+    )
     op.add_column(
         "race_entries", sa.Column("data_source", sa.String(length=16), nullable=True)
     )

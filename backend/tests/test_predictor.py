@@ -14,8 +14,11 @@ class TestSHAPExplanation:
         import pandas as pd
 
         feature_names = [
-            "horse_avg_finish_3", "jockey_win_rate", "win_odds",
-            "distance_m", "horse_age",
+            "horse_avg_finish_3",
+            "jockey_win_rate",
+            "win_odds",
+            "distance_m",
+            "horse_age",
         ]
         feature_row = pd.Series(
             [2.5, 0.15, 8.0, 1600, 3],
@@ -29,8 +32,9 @@ class TestSHAPExplanation:
         shap_values = np.array([0.15, 0.10, -0.08, 0.03, -0.02])
 
         result = _generate_explanation(shap_values, feature_names, feature_row)
-        assert result.startswith("この馬の予想根拠:"), \
+        assert result.startswith("この馬の予想根拠:"), (
             f"Expected prefix 'この馬の予想根拠:', got: {result[:20]}"
+        )
 
     def test_explanation_uses_japanese_labels(self):
         """Explanation should use Japanese labels from FEATURE_LABEL_JA."""
@@ -41,8 +45,9 @@ class TestSHAPExplanation:
 
         # Top feature by abs SHAP is horse_avg_finish_3 (0.15)
         expected_ja = FEATURE_LABEL_JA["horse_avg_finish_3"]
-        assert expected_ja in result, \
+        assert expected_ja in result, (
             f"Expected '{expected_ja}' in explanation, got: {result}"
+        )
 
     def test_explanation_shows_direction(self):
         """Positive SHAP should show '高い', negative should show '低い'."""
@@ -62,13 +67,17 @@ class TestSHAPExplanation:
         shap_values = np.array([0.15, 0.10, -0.08, 0.03, -0.02])
 
         result = _generate_explanation(
-            shap_values, feature_names, feature_row, top_n=2,
+            shap_values,
+            feature_names,
+            feature_row,
+            top_n=2,
         )
 
         # Should have exactly 2 reasons (separated by '、')
         reasons = result.replace("この馬の予想根拠: ", "").split("、")
-        assert len(reasons) == 2, \
+        assert len(reasons) == 2, (
             f"Expected 2 reasons with top_n=2, got {len(reasons)}: {reasons}"
+        )
 
     def test_explanation_contains_shap_values(self):
         """Explanation should include numeric SHAP contribution values."""

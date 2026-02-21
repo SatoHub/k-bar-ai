@@ -52,6 +52,7 @@ class RaceEntry(Base):
 
     owner: Mapped[str | None] = mapped_column(String(100))
     prize_money_10k_yen: Mapped[Decimal | None] = mapped_column(Numeric(10, 1))
+    data_source: Mapped[str | None] = mapped_column(String(16))
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="entries")  # noqa: F821

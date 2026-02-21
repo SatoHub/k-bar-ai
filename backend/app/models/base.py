@@ -15,6 +15,4 @@ convention = {
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=convention)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

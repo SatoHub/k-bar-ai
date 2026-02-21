@@ -1,32 +1,80 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   racecourses: string[];
+  initialYearMonth?: string;
+  initialWeek?: string;
   initialDate?: string;
   initialRacecourse?: string;
-  onFilter: (filters: { date?: string; racecourse?: string }) => void;
+  onFilter: (filters: {
+    date?: string;
+    year_month?: string;
+    week?: string;
+    racecourse?: string;
+  }) => void;
+};
+
+function getCurrentYearMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function generateYearMonthOptions(): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = [];
+  const now = new Date();
+  // Show 2 years back + 2 months forward
+  for (let offset = -24; offset <= 2; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+    options.push({ value, label });
+  }
+  return options.reverse();
+}
+
+const inputStyle = {
+  backgroundColor: "var(--bg-elevated)",
+  border: "1px solid var(--border-light)",
+  color: "var(--text-primary)",
+  transition: "border-color 200ms ease-out",
 };
 
 export default function RaceFilters({
   racecourses,
+  initialYearMonth = "",
+  initialWeek = "",
   initialDate = "",
   initialRacecourse = "",
   onFilter,
 }: Props) {
+  const [yearMonth, setYearMonth] = useState(initialYearMonth);
+  const [week, setWeek] = useState(initialWeek);
   const [date, setDate] = useState(initialDate);
   const [racecourse, setRacecourse] = useState(initialRacecourse);
+
+  // Sync local state when URL params change (e.g. calendar day click)
+  useEffect(() => { setYearMonth(initialYearMonth); }, [initialYearMonth]);
+  useEffect(() => { setWeek(initialWeek); }, [initialWeek]);
+  useEffect(() => { setDate(initialDate); }, [initialDate]);
+  useEffect(() => { setRacecourse(initialRacecourse); }, [initialRacecourse]);
+
+  const yearMonthOptions = generateYearMonthOptions();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     onFilter({
       date: date || undefined,
+      year_month: !date ? yearMonth || undefined : undefined,
+      week: !date && yearMonth && week ? week : undefined,
       racecourse: racecourse || undefined,
     });
   }
 
   function handleClear() {
+    setYearMonth("");
+    setWeek("");
     setDate("");
     setRacecourse("");
     onFilter({});
@@ -37,13 +85,69 @@ export default function RaceFilters({
       onSubmit={handleSubmit}
       className="glass-card flex flex-wrap items-end gap-3 p-4"
     >
+      {/* Year-Month select */}
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor="filter-year-month"
+          className="text-sm font-medium"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          年月
+        </label>
+        <select
+          id="filter-year-month"
+          value={yearMonth}
+          onChange={(e) => {
+            setYearMonth(e.target.value);
+            if (!e.target.value) setWeek("");
+          }}
+          className="rounded-md px-3 py-2 text-sm focus:outline-none"
+          style={inputStyle}
+          disabled={!!date}
+        >
+          <option value="">すべて</option>
+          {yearMonthOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Week select */}
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor="filter-week"
+          className="text-sm font-medium"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          週
+        </label>
+        <select
+          id="filter-week"
+          value={week}
+          onChange={(e) => setWeek(e.target.value)}
+          className="rounded-md px-3 py-2 text-sm focus:outline-none"
+          style={inputStyle}
+          disabled={!yearMonth || !!date}
+        >
+          <option value="">全週</option>
+          <option value="1">第1週</option>
+          <option value="2">第2週</option>
+          <option value="3">第3週</option>
+          <option value="4">第4週</option>
+          <option value="5">第5週</option>
+        </select>
+      </div>
+
+      {/* Specific date */}
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-date"
           className="text-sm font-medium"
           style={{ color: "var(--text-secondary)" }}
         >
-          日付
+          日付指定
         </label>
         <input
           id="filter-date"
@@ -51,21 +155,11 @@ export default function RaceFilters({
           value={date}
           onChange={(e) => setDate(e.target.value)}
           className="rounded-md px-3 py-2 text-sm focus:outline-none"
-          style={{
-            backgroundColor: "var(--bg-elevated)",
-            border: "1px solid var(--border-light)",
-            color: "var(--text-primary)",
-            transition: "border-color 200ms ease-out",
-          }}
-          onFocus={(e) =>
-            (e.currentTarget.style.borderColor = "var(--border-accent)")
-          }
-          onBlur={(e) =>
-            (e.currentTarget.style.borderColor = "var(--border-light)")
-          }
+          style={inputStyle}
         />
       </div>
 
+      {/* Racecourse */}
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-racecourse"
@@ -79,18 +173,7 @@ export default function RaceFilters({
           value={racecourse}
           onChange={(e) => setRacecourse(e.target.value)}
           className="rounded-md px-3 py-2 text-sm focus:outline-none"
-          style={{
-            backgroundColor: "var(--bg-elevated)",
-            border: "1px solid var(--border-light)",
-            color: "var(--text-primary)",
-            transition: "border-color 200ms ease-out",
-          }}
-          onFocus={(e) =>
-            (e.currentTarget.style.borderColor = "var(--border-accent)")
-          }
-          onBlur={(e) =>
-            (e.currentTarget.style.borderColor = "var(--border-light)")
-          }
+          style={inputStyle}
         >
           <option value="">すべて</option>
           {racecourses.map((rc) => (

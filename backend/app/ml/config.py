@@ -11,28 +11,48 @@ HORSE_ROLLING_WINDOWS = [3, 5]
 
 FEATURE_COLUMNS = [
     # Horse rolling stats
-    "horse_avg_finish_3", "horse_avg_finish_5",
-    "horse_avg_last3f_3", "horse_avg_last3f_5",
-    "horse_win_rate_3", "horse_win_rate_5",
-    "horse_place_rate_3", "horse_place_rate_5",
-    "horse_avg_prize_3", "horse_avg_prize_5",
+    "horse_avg_finish_3",
+    "horse_avg_finish_5",
+    "horse_avg_last3f_3",
+    "horse_avg_last3f_5",
+    "horse_win_rate_3",
+    "horse_win_rate_5",
+    "horse_place_rate_3",
+    "horse_place_rate_5",
+    "horse_avg_prize_3",
+    "horse_avg_prize_5",
     # Jockey stats
-    "jockey_win_rate", "jockey_place_rate",
-    "jockey_course_win_rate", "jockey_distance_win_rate",
+    "jockey_win_rate",
+    "jockey_place_rate",
+    "jockey_course_win_rate",
+    "jockey_distance_win_rate",
     # Trainer stats
-    "trainer_win_rate", "trainer_place_rate", "trainer_course_win_rate",
+    "trainer_win_rate",
+    "trainer_place_rate",
+    "trainer_course_win_rate",
     # Horse condition
-    "days_since_last_race", "cumulative_prize", "race_count",
+    "days_since_last_race",
+    "cumulative_prize",
+    "race_count",
     # Race info (numeric)
-    "distance_m", "bracket_number", "post_position",
-    "horse_age", "weight_carried_kg",
-    "horse_weight_kg", "horse_weight_diff",
-    "win_odds", "win_favorite",
+    "distance_m",
+    "bracket_number",
+    "post_position",
+    "horse_age",
+    "weight_carried_kg",
+    "horse_weight_kg",
+    "horse_weight_diff",
+    "win_odds",
+    "win_favorite",
 ]
 
 CATEGORICAL_COLUMNS = [
-    "surface", "track_condition", "weather", "direction",
-    "racecourse_name", "horse_sex",
+    "surface",
+    "track_condition",
+    "weather",
+    "direction",
+    "racecourse_name",
+    "horse_sex",
 ]
 
 TARGET_COLUMN = "is_place"  # 複勝圏内 (finish_position <= 3)

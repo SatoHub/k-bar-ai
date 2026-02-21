@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BetSummaryCard from "@/components/BetSummaryCard";
 import DataStatusCard from "@/components/DataStatusCard";
 import ModelMetricsCard from "@/components/ModelMetricsCard";
 
@@ -177,6 +178,9 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
+
+      {/* Bet summary */}
+      <BetSummaryCard />
 
       {/* Data & Model overview */}
       <div className="grid gap-6 md:grid-cols-2">

@@ -26,8 +26,15 @@ def run_verify() -> None:
 
         # 1. Row counts
         print("\n[1] Row counts")
-        tables = ["races", "horses", "jockeys", "trainers", "race_entries",
-                   "prediction_logs", "model_versions"]
+        tables = [
+            "races",
+            "horses",
+            "jockeys",
+            "trainers",
+            "race_entries",
+            "prediction_logs",
+            "model_versions",
+        ]
         for t in tables:
             count = session.scalar(text(f"SELECT count(*) FROM {t}"))
             print(f"  {t:20s}: {count:>10,}")
@@ -42,14 +49,22 @@ def run_verify() -> None:
         # 3. FK integrity - orphan entries
         print("\n[3] FK integrity checks")
         checks = [
-            ("race_entries with missing race",
-             "SELECT count(*) FROM race_entries re LEFT JOIN races r ON re.race_id = r.id WHERE r.id IS NULL"),
-            ("race_entries with missing horse",
-             "SELECT count(*) FROM race_entries re LEFT JOIN horses h ON re.horse_id = h.id WHERE h.id IS NULL"),
-            ("race_entries with missing jockey (where jockey_id is set)",
-             "SELECT count(*) FROM race_entries re LEFT JOIN jockeys j ON re.jockey_id = j.id WHERE re.jockey_id IS NOT NULL AND j.id IS NULL"),
-            ("race_entries with missing trainer (where trainer_id is set)",
-             "SELECT count(*) FROM race_entries re LEFT JOIN trainers t ON re.trainer_id = t.id WHERE re.trainer_id IS NOT NULL AND t.id IS NULL"),
+            (
+                "race_entries with missing race",
+                "SELECT count(*) FROM race_entries re LEFT JOIN races r ON re.race_id = r.id WHERE r.id IS NULL",
+            ),
+            (
+                "race_entries with missing horse",
+                "SELECT count(*) FROM race_entries re LEFT JOIN horses h ON re.horse_id = h.id WHERE h.id IS NULL",
+            ),
+            (
+                "race_entries with missing jockey (where jockey_id is set)",
+                "SELECT count(*) FROM race_entries re LEFT JOIN jockeys j ON re.jockey_id = j.id WHERE re.jockey_id IS NOT NULL AND j.id IS NULL",
+            ),
+            (
+                "race_entries with missing trainer (where trainer_id is set)",
+                "SELECT count(*) FROM race_entries re LEFT JOIN trainers t ON re.trainer_id = t.id WHERE re.trainer_id IS NOT NULL AND t.id IS NULL",
+            ),
         ]
         for label, query in checks:
             count = session.scalar(text(query))
@@ -60,15 +75,21 @@ def run_verify() -> None:
 
         # 4. Duplicate checks
         print("\n[4] Duplicate checks")
-        dup_races = session.scalar(text(
-            "SELECT count(*) FROM (SELECT race_id FROM races GROUP BY race_id HAVING count(*) > 1) t"
-        ))
-        dup_entries = session.scalar(text(
-            "SELECT count(*) FROM (SELECT race_id, post_position FROM race_entries "
-            "GROUP BY race_id, post_position HAVING count(*) > 1) t"
-        ))
-        for label, count in [("Duplicate race_id in races", dup_races),
-                              ("Duplicate (race, post_position) in entries", dup_entries)]:
+        dup_races = session.scalar(
+            text(
+                "SELECT count(*) FROM (SELECT race_id FROM races GROUP BY race_id HAVING count(*) > 1) t"
+            )
+        )
+        dup_entries = session.scalar(
+            text(
+                "SELECT count(*) FROM (SELECT race_id, post_position FROM race_entries "
+                "GROUP BY race_id, post_position HAVING count(*) > 1) t"
+            )
+        )
+        for label, count in [
+            ("Duplicate race_id in races", dup_races),
+            ("Duplicate (race, post_position) in entries", dup_entries),
+        ]:
             status = "OK" if count == 0 else f"FAIL ({count:,} duplicates)"
             if count > 0:
                 ok = False
@@ -77,14 +98,22 @@ def run_verify() -> None:
         # 5. Value range checks
         print("\n[5] Value range checks")
         range_checks = [
-            ("distance_m (800-4000)",
-             "SELECT count(*) FROM races WHERE distance_m IS NOT NULL AND (distance_m < 800 OR distance_m > 4000)"),
-            ("bracket_number (1-8)",
-             "SELECT count(*) FROM race_entries WHERE bracket_number IS NOT NULL AND (bracket_number < 1 OR bracket_number > 8)"),
-            ("finish_position (1-30)",
-             "SELECT count(*) FROM race_entries WHERE finish_position IS NOT NULL AND (finish_position < 1 OR finish_position > 30)"),
-            ("horse_age (2-15)",
-             "SELECT count(*) FROM race_entries WHERE horse_age IS NOT NULL AND (horse_age < 2 OR horse_age > 15)"),
+            (
+                "distance_m (800-4000)",
+                "SELECT count(*) FROM races WHERE distance_m IS NOT NULL AND (distance_m < 800 OR distance_m > 4000)",
+            ),
+            (
+                "bracket_number (1-8)",
+                "SELECT count(*) FROM race_entries WHERE bracket_number IS NOT NULL AND (bracket_number < 1 OR bracket_number > 8)",
+            ),
+            (
+                "finish_position (1-30)",
+                "SELECT count(*) FROM race_entries WHERE finish_position IS NOT NULL AND (finish_position < 1 OR finish_position > 30)",
+            ),
+            (
+                "horse_age (2-15)",
+                "SELECT count(*) FROM race_entries WHERE horse_age IS NOT NULL AND (horse_age < 2 OR horse_age > 15)",
+            ),
         ]
         for label, query in range_checks:
             count = session.scalar(text(query))
@@ -93,11 +122,13 @@ def run_verify() -> None:
 
         # 6. Racecourse list
         print("\n[6] Racecourses in data")
-        result = session.execute(text(
-            "SELECT racecourse_name, count(*) FROM races "
-            "WHERE racecourse_name IS NOT NULL "
-            "GROUP BY racecourse_name ORDER BY count(*) DESC"
-        ))
+        result = session.execute(
+            text(
+                "SELECT racecourse_name, count(*) FROM races "
+                "WHERE racecourse_name IS NOT NULL "
+                "GROUP BY racecourse_name ORDER BY count(*) DESC"
+            )
+        )
         for name, count in result:
             print(f"  {name:10s}: {count:>8,} races")
 

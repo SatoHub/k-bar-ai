@@ -143,6 +143,7 @@ async def get_course_aptitude_bulk(
             select(RaceEntry.finish_position)
             .join(Race, RaceEntry.race_id == Race.id)
             .where(*hfilters)
+            .where(RaceEntry.finish_position.isnot(None))
         )
         positions = [r[0] for r in result.all()]
         runs = len(positions)

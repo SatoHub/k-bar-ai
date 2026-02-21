@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/", label: "ダッシュボード" },
   { href: "/races", label: "レース一覧" },
+  { href: "/bets", label: "収支" },
   { href: "/models", label: "モデル管理" },
 ] as const;
 

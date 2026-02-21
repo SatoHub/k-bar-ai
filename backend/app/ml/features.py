@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Data loading
 # ---------------------------------------------------------------------------
 
-_RAW_SQL = text("""
+_RAW_SQL_BASE = """
     SELECT
         re.id          AS entry_id,
         r.race_id      AS race_id_str,
@@ -63,16 +63,26 @@ _RAW_SQL = text("""
     JOIN horses   h ON h.id  = re.horse_id
     LEFT JOIN jockeys  j ON j.id  = re.jockey_id
     LEFT JOIN trainers t ON t.id  = re.trainer_id
-    WHERE re.finish_position IS NOT NULL
-    ORDER BY r.race_date, r.race_id, re.finish_position
-""")
+    {where_clause}
+    ORDER BY r.race_date, r.race_id, COALESCE(re.finish_position, 999)
+"""
 
 
-def _load_raw_data() -> pd.DataFrame:
-    """Load all race entries joined with master tables."""
+def _load_raw_data(include_upcoming: bool = False) -> pd.DataFrame:
+    """Load all race entries joined with master tables.
+
+    Args:
+        include_upcoming: If True, also loads entries without finish_position
+            (upcoming races for prediction). Default False for training.
+    """
+    if include_upcoming:
+        where_clause = ""
+    else:
+        where_clause = "WHERE re.finish_position IS NOT NULL"
+    sql = text(_RAW_SQL_BASE.format(where_clause=where_clause))
     engine = create_engine(settings.database_url_sync)
     logger.info("Loading raw data from database...")
-    df = pd.read_sql(_RAW_SQL, engine)
+    df = pd.read_sql(sql, engine)
     logger.info("Loaded %d rows", len(df))
     engine.dispose()
 
@@ -80,9 +90,16 @@ def _load_raw_data() -> pd.DataFrame:
     df["race_date"] = pd.to_datetime(df["race_date"])
     for col in ["weight_carried_kg", "last_3f_time", "win_odds", "prize_money_10k_yen"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
-    for col in ["finish_position", "bracket_number", "post_position",
-                "horse_age", "horse_weight_kg", "horse_weight_diff",
-                "win_favorite", "distance_m"]:
+    for col in [
+        "finish_position",
+        "bracket_number",
+        "post_position",
+        "horse_age",
+        "horse_weight_kg",
+        "horse_weight_diff",
+        "win_favorite",
+        "distance_m",
+    ]:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
 
     return df
@@ -91,6 +108,7 @@ def _load_raw_data() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Horse rolling statistics
 # ---------------------------------------------------------------------------
+
 
 def _compute_horse_rolling_stats(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -127,6 +145,7 @@ def _compute_horse_rolling_stats(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Jockey cumulative statistics
 # ---------------------------------------------------------------------------
+
 
 def _compute_jockey_stats(df: pd.DataFrame) -> pd.DataFrame:
     """Compute cumulative jockey statistics with expanding window + shift(1)."""
@@ -165,6 +184,7 @@ def _compute_jockey_stats(df: pd.DataFrame) -> pd.DataFrame:
 # Trainer cumulative statistics
 # ---------------------------------------------------------------------------
 
+
 def _compute_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
     """Compute cumulative trainer statistics with expanding window + shift(1)."""
     df = df.sort_values(["trainer_uuid", "race_date", "race_id_str"]).copy()
@@ -188,6 +208,7 @@ def _compute_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Horse condition features
 # ---------------------------------------------------------------------------
+
 
 def _compute_horse_condition_features(df: pd.DataFrame) -> pd.DataFrame:
     """Compute days since last race, cumulative prize, race count."""
@@ -213,6 +234,7 @@ def _compute_horse_condition_features(df: pd.DataFrame) -> pd.DataFrame:
 # Categorical encoding
 # ---------------------------------------------------------------------------
 
+
 def _encode_categorical_features(df: pd.DataFrame) -> pd.DataFrame:
     """Convert categorical columns to pandas Categorical (LightGBM native support)."""
     for col in CATEGORICAL_COLUMNS:
@@ -225,8 +247,10 @@ def _encode_categorical_features(df: pd.DataFrame) -> pd.DataFrame:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def build_feature_matrix(
     df: pd.DataFrame | None = None,
+    include_upcoming: bool = False,
 ) -> pd.DataFrame:
     """
     Build the complete feature matrix.
@@ -234,11 +258,15 @@ def build_feature_matrix(
     If df is None, loads from database. Otherwise uses the provided DataFrame
     (useful for testing).
 
+    Args:
+        include_upcoming: If True, also loads upcoming races (no finish_position)
+            for prediction. Rolling stats will use only prior finished races.
+
     Returns a DataFrame with FEATURE_COLUMNS + CATEGORICAL_COLUMNS + TARGET_COLUMN
     plus metadata columns (entry_id, race_id_str, race_date, horse_uuid, etc.).
     """
     if df is None:
-        df = _load_raw_data()
+        df = _load_raw_data(include_upcoming=include_upcoming)
 
     logger.info("Computing horse rolling stats...")
     df = _compute_horse_rolling_stats(df)

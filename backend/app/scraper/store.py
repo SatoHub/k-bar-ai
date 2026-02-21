@@ -222,12 +222,24 @@ def store_shutuba(shutuba_data: dict, race_date: datetime.date) -> int:
             raise
 
 
+def _parse_post_time(raw: str | None) -> datetime.time | None:
+    """Parse 'HH:MM' string into a time object."""
+    if not raw:
+        return None
+    try:
+        parts = raw.strip().split(":")
+        return datetime.time(int(parts[0]), int(parts[1]))
+    except (ValueError, IndexError):
+        return None
+
+
 def _upsert_race(
     session: Session, shutuba_data: dict, race_date: datetime.date
 ) -> uuid.UUID:
     """Upsert race record and return its UUID."""
     race_id_str = shutuba_data["race_id"]
     race_info = shutuba_data.get("race_info", {})
+    post_time = _parse_post_time(shutuba_data.get("post_time"))
 
     row = session.execute(select(Race.id).where(Race.race_id == race_id_str)).first()
     if row:
@@ -243,6 +255,7 @@ def _upsert_race(
                 weather=race_info.get("weather"),
                 track_condition=race_info.get("track_condition"),
                 racecourse_name=race_info.get("racecourse_name"),
+                post_time=post_time or Race.post_time,
                 data_source="scrape",
             )
         )
@@ -269,6 +282,7 @@ def _upsert_race(
         weather=race_info.get("weather"),
         track_condition=race_info.get("track_condition"),
         racecourse_name=race_info.get("racecourse_name"),
+        post_time=post_time,
         data_source="scrape",
     )
     stmt = stmt.on_conflict_do_nothing(index_elements=["race_id"])

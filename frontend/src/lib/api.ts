@@ -12,6 +12,30 @@ async function fetchJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function postJSON<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    throw new Error(`API ${res.status}: ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function putJSON<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`API ${res.status}: ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 // ---------------------------------------------------------------------------
 // Types — mirrors backend Pydantic schemas
 // ---------------------------------------------------------------------------
@@ -39,6 +63,7 @@ export type HorseBase = {
   id: string;
   name: string;
   sex: string | null;
+  netkeiba_id?: string | null;
 };
 
 export type JockeyBase = {
@@ -86,11 +111,13 @@ export type RaceListItem = {
   racecourse_name: string | null;
   race_number: number | null;
   race_name: string | null;
+  post_time: string | null;
   surface: string | null;
   distance_m: number | null;
   weather: string | null;
   track_condition: string | null;
   graded_race: string | null;
+  upset_score?: number | null;
 };
 
 // Race detail (extends list item)
@@ -109,6 +136,17 @@ export type RaceListResponse = {
   per_page: number;
 };
 
+// Calendar
+export type CalendarDay = {
+  date: string;
+  race_count: number;
+};
+
+export type CalendarResponse = {
+  year_month: string;
+  days: CalendarDay[];
+};
+
 // Prediction entry
 export type PredictionEntry = {
   id: string;
@@ -119,6 +157,7 @@ export type PredictionEntry = {
   confidence: string | null;
   explanation: string | null;
   actual_finish: number | null;
+  shap_data?: Record<string, number> | null;
 };
 
 // Race prediction response
@@ -159,6 +198,125 @@ export type ModelMetrics = {
   place_hit_rate: number | null;
 };
 
+// Odds
+export type OddsEntry = {
+  post_position: number;
+  horse_name: string | null;
+  win_odds: number | null;
+  win_favorite: number | null;
+  fetched_at: string;
+};
+
+export type OddsResponse = {
+  race_id: string;
+  entries: OddsEntry[];
+  fetched_at: string | null;
+};
+
+export type OddsHistoryPoint = {
+  post_position: number;
+  horse_name: string | null;
+  win_odds: number;
+  fetched_at: string;
+};
+
+export type OddsHistoryResponse = {
+  race_id: string;
+  history: OddsHistoryPoint[];
+};
+
+// Horse detail
+export type HorseRaceRecord = {
+  race_id: string;
+  race_date: string;
+  racecourse_name: string | null;
+  race_name: string | null;
+  surface: string | null;
+  distance_m: number | null;
+  track_condition: string | null;
+  finish_position: number | null;
+  finish_note: string | null;
+  total_time_tenths: number | null;
+  win_odds: number | null;
+  jockey_name: string | null;
+};
+
+export type HorseDetail = {
+  id: string;
+  name: string;
+  sex: string | null;
+  netkeiba_id: string | null;
+  image_url: string | null;
+  total_runs: number;
+  wins: number;
+  place_count: number;
+  win_rate: number;
+  place_rate: number;
+  surface_stats: Record<string, { runs: number; wins: number; place: number }>;
+  records: HorseRaceRecord[];
+};
+
+// Aptitude
+export type AptitudeEntry = {
+  horse_id: string;
+  runs: number;
+  wins: number;
+  place_count: number;
+  score: number; // 1-3
+};
+
+export type AptitudeResponse = {
+  race_id: string;
+  entries: AptitudeEntry[];
+};
+
+// Bet records
+export type BetRecord = {
+  id: string;
+  race_id: string | null;
+  bet_date: string;
+  bet_type: string;
+  horse_names: string;
+  amount_yen: number;
+  odds_at_bet: number | null;
+  actual_payout: number | null;
+  is_hit: boolean | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type BetRecordCreate = {
+  race_id?: string | null;
+  bet_date: string;
+  bet_type: string;
+  horse_names: string;
+  amount_yen: number;
+  odds_at_bet?: number | null;
+  note?: string | null;
+};
+
+export type BetRecordUpdate = {
+  actual_payout?: number | null;
+  is_hit?: boolean | null;
+  note?: string | null;
+};
+
+export type BetListResponse = {
+  items: BetRecord[];
+  total: number;
+  page: number;
+  per_page: number;
+};
+
+export type BetSummary = {
+  total_bets: number;
+  total_amount: number;
+  total_payout: number;
+  recovery_rate: number;
+  hit_count: number;
+  hit_rate: number;
+};
+
 // ---------------------------------------------------------------------------
 // API functions
 // ---------------------------------------------------------------------------
@@ -173,17 +331,27 @@ export function fetchDataStatus(): Promise<DataStatus> {
 
 export function fetchRaces(params?: {
   date?: string;
+  year_month?: string;
+  week?: string;
   racecourse?: string;
   page?: number;
   per_page?: number;
 }): Promise<RaceListResponse> {
   const sp = new URLSearchParams();
   if (params?.date) sp.set("date", params.date);
+  if (params?.year_month) sp.set("year_month", params.year_month);
+  if (params?.week) sp.set("week", params.week);
   if (params?.racecourse) sp.set("racecourse", params.racecourse);
   if (params?.page) sp.set("page", String(params.page));
   if (params?.per_page) sp.set("per_page", String(params.per_page));
   const qs = sp.toString();
   return fetchJSON<RaceListResponse>(`/races${qs ? `?${qs}` : ""}`);
+}
+
+export function fetchCalendar(yearMonth: string): Promise<CalendarResponse> {
+  return fetchJSON<CalendarResponse>(
+    `/races/calendar?year_month=${yearMonth}`,
+  );
 }
 
 export function fetchRaceDetail(raceId: string): Promise<RaceDetail> {
@@ -202,4 +370,54 @@ export function fetchModels(): Promise<ModelVersionListResponse> {
 
 export function fetchModelMetrics(version: string): Promise<ModelMetrics> {
   return fetchJSON<ModelMetrics>(`/models/${version}/metrics`);
+}
+
+// Odds
+export function fetchOdds(raceId: string): Promise<OddsResponse> {
+  return fetchJSON<OddsResponse>(`/races/${raceId}/odds`);
+}
+
+export function refreshOdds(raceId: string): Promise<OddsResponse> {
+  return postJSON<OddsResponse>(`/races/${raceId}/odds/refresh`);
+}
+
+export function fetchOddsHistory(raceId: string): Promise<OddsHistoryResponse> {
+  return fetchJSON<OddsHistoryResponse>(`/races/${raceId}/odds/history`);
+}
+
+// Horse detail
+export function fetchHorseDetail(horseId: string): Promise<HorseDetail> {
+  return fetchJSON<HorseDetail>(`/horses/${horseId}`);
+}
+
+// Aptitude
+export function fetchAptitude(raceId: string): Promise<AptitudeResponse> {
+  return fetchJSON<AptitudeResponse>(`/races/${raceId}/aptitude`);
+}
+
+// Bets
+export function createBet(data: BetRecordCreate): Promise<BetRecord> {
+  return postJSON<BetRecord>("/bets", data);
+}
+
+export function fetchBets(params?: {
+  page?: number;
+  per_page?: number;
+}): Promise<BetListResponse> {
+  const sp = new URLSearchParams();
+  if (params?.page) sp.set("page", String(params.page));
+  if (params?.per_page) sp.set("per_page", String(params.per_page));
+  const qs = sp.toString();
+  return fetchJSON<BetListResponse>(`/bets${qs ? `?${qs}` : ""}`);
+}
+
+export function updateBet(
+  betId: string,
+  data: BetRecordUpdate,
+): Promise<BetRecord> {
+  return putJSON<BetRecord>(`/bets/${betId}`, data);
+}
+
+export function fetchBetSummary(): Promise<BetSummary> {
+  return fetchJSON<BetSummary>("/bets/summary");
 }

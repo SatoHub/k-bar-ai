@@ -31,6 +31,7 @@ BATCH_SIZE = 1_000
 # Safe type conversion helpers
 # ---------------------------------------------------------------------------
 
+
 def _safe_int(val) -> int | None:
     """Convert value to int, returning None on failure."""
     if val is None:
@@ -98,6 +99,7 @@ def _parse_race_date(val) -> date | None:
 # CSV discovery & reading
 # ---------------------------------------------------------------------------
 
+
 def _find_csv(csv_path: str | Path | None) -> Path:
     """Find the CSV file to ingest."""
     if csv_path:
@@ -138,14 +140,13 @@ def _read_csv_chunks(csv_path: Path, chunk_size: int = CHUNK_SIZE):
             print("[ingest] CSV file is empty.")
             return
 
-    raise RuntimeError(
-        f"Could not read {csv_path} with UTF-8 or cp932 encoding."
-    )
+    raise RuntimeError(f"Could not read {csv_path} with UTF-8 or cp932 encoding.")
 
 
 # ---------------------------------------------------------------------------
 # Column mapping & cleaning for a chunk
 # ---------------------------------------------------------------------------
+
 
 def _map_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Rename Japanese CSV columns to internal names using COLUMN_MAP."""
@@ -170,6 +171,7 @@ def _extract_race_symbols(row: pd.Series) -> dict:
 # ---------------------------------------------------------------------------
 # Master table upsert helpers
 # ---------------------------------------------------------------------------
+
 
 def _upsert_horses(
     session: Session,
@@ -267,6 +269,7 @@ def _upsert_trainers(
 # Race & RaceEntry builders
 # ---------------------------------------------------------------------------
 
+
 def _build_and_upsert_races(
     session: Session,
     df: pd.DataFrame,
@@ -283,22 +286,24 @@ def _build_and_upsert_races(
 
         symbols = _extract_race_symbols(row)
 
-        new_values.append({
-            "id": uuid.uuid4(),
-            "race_id": rid,
-            "race_date": _parse_race_date(row.get("race_date")),
-            "racecourse_code": _safe_str(row.get("racecourse_code")),
-            "racecourse_name": _safe_str(row.get("racecourse_name")),
-            "race_number": _safe_int(row.get("race_number")),
-            "race_name": _safe_str(row.get("race_name")),
-            "surface": _safe_str(row.get("surface")),
-            "distance_m": _safe_int(row.get("distance_m")),
-            "weather": _safe_str(row.get("weather")),
-            "track_condition": _safe_str(row.get("track_condition")),
-            "direction": _safe_str(row.get("direction")),
-            "graded_race": _safe_str(row.get("graded_race")),
-            "race_symbols": symbols if symbols else None,
-        })
+        new_values.append(
+            {
+                "id": uuid.uuid4(),
+                "race_id": rid,
+                "race_date": _parse_race_date(row.get("race_date")),
+                "racecourse_code": _safe_str(row.get("racecourse_code")),
+                "racecourse_name": _safe_str(row.get("racecourse_name")),
+                "race_number": _safe_int(row.get("race_number")),
+                "race_name": _safe_str(row.get("race_name")),
+                "surface": _safe_str(row.get("surface")),
+                "distance_m": _safe_int(row.get("distance_m")),
+                "weather": _safe_str(row.get("weather")),
+                "track_condition": _safe_str(row.get("track_condition")),
+                "direction": _safe_str(row.get("direction")),
+                "graded_race": _safe_str(row.get("graded_race")),
+                "race_symbols": symbols if symbols else None,
+            }
+        )
 
     if new_values:
         for i in range(0, len(new_values), BATCH_SIZE):
@@ -353,32 +358,34 @@ def _build_entries(
         finish_position = _safe_int(fp_raw)
         finish_note = _safe_str(row.get("finish_note"))
 
-        entries.append({
-            "id": uuid.uuid4(),
-            "race_id": race_uuid,
-            "horse_id": horse_uuid,
-            "jockey_id": jockey_uuid,
-            "trainer_id": trainer_uuid,
-            "bracket_number": _safe_int(row.get("bracket_number")),
-            "post_position": _safe_int(row.get("post_position")),
-            "horse_age": _safe_int(row.get("age")),
-            "weight_carried_kg": _safe_float(row.get("weight_carried_kg")),
-            "finish_position": finish_position,
-            "finish_note": finish_note,
-            "total_time_tenths": _safe_int(row.get("total_time_tenths")),
-            "margin": _safe_str(row.get("margin")),
-            "corner_pos_1": _safe_str(row.get("corner_pos_1")),
-            "corner_pos_2": _safe_str(row.get("corner_pos_2")),
-            "corner_pos_3": _safe_str(row.get("corner_pos_3")),
-            "corner_pos_4": _safe_str(row.get("corner_pos_4")),
-            "last_3f_time": _safe_float(row.get("last_3f_time")),
-            "win_odds": _safe_float(row.get("win_odds")),
-            "win_favorite": _safe_int(row.get("win_favorite")),
-            "horse_weight_kg": _safe_int(row.get("horse_weight_kg")),
-            "horse_weight_diff": _safe_int(row.get("horse_weight_diff")),
-            "owner": _safe_str(row.get("owner")),
-            "prize_money_10k_yen": _safe_float(row.get("prize_money_10k_yen")),
-        })
+        entries.append(
+            {
+                "id": uuid.uuid4(),
+                "race_id": race_uuid,
+                "horse_id": horse_uuid,
+                "jockey_id": jockey_uuid,
+                "trainer_id": trainer_uuid,
+                "bracket_number": _safe_int(row.get("bracket_number")),
+                "post_position": _safe_int(row.get("post_position")),
+                "horse_age": _safe_int(row.get("age")),
+                "weight_carried_kg": _safe_float(row.get("weight_carried_kg")),
+                "finish_position": finish_position,
+                "finish_note": finish_note,
+                "total_time_tenths": _safe_int(row.get("total_time_tenths")),
+                "margin": _safe_str(row.get("margin")),
+                "corner_pos_1": _safe_str(row.get("corner_pos_1")),
+                "corner_pos_2": _safe_str(row.get("corner_pos_2")),
+                "corner_pos_3": _safe_str(row.get("corner_pos_3")),
+                "corner_pos_4": _safe_str(row.get("corner_pos_4")),
+                "last_3f_time": _safe_float(row.get("last_3f_time")),
+                "win_odds": _safe_float(row.get("win_odds")),
+                "win_favorite": _safe_int(row.get("win_favorite")),
+                "horse_weight_kg": _safe_int(row.get("horse_weight_kg")),
+                "horse_weight_diff": _safe_int(row.get("horse_weight_diff")),
+                "owner": _safe_str(row.get("owner")),
+                "prize_money_10k_yen": _safe_float(row.get("prize_money_10k_yen")),
+            }
+        )
 
     return entries
 
@@ -392,9 +399,7 @@ def _insert_entries(session: Session, entries: list[dict]) -> int:
     for i in range(0, len(entries), BATCH_SIZE):
         batch = entries[i : i + BATCH_SIZE]
         stmt = pg_insert(RaceEntry).values(batch)
-        stmt = stmt.on_conflict_do_nothing(
-            index_elements=["race_id", "post_position"]
-        )
+        stmt = stmt.on_conflict_do_nothing(index_elements=["race_id", "post_position"])
         session.execute(stmt)
         inserted += len(batch)
 
@@ -404,6 +409,7 @@ def _insert_entries(session: Session, entries: list[dict]) -> int:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run_ingest(csv_path: str | Path | None = None) -> None:
     """
