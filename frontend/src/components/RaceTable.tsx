@@ -122,108 +122,154 @@ export default function RaceTable({ items }: Props) {
   }
 
   return (
-    <div className="glass-card overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr
-            className="text-left text-xs font-medium uppercase tracking-wider"
-            style={{
-              backgroundColor: "var(--bg-elevated)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <th className="px-4 py-3">日付</th>
-            <th className="px-4 py-3">発走</th>
-            <th className="px-4 py-3">状態</th>
-            <th className="px-4 py-3">競馬場</th>
-            <th className="px-4 py-3 text-center">R</th>
-            <th className="px-4 py-3">レース名</th>
-            <th className="px-4 py-3">コース</th>
-            <th className="px-4 py-3">天候</th>
-            <th className="px-4 py-3">馬場状態</th>
-            <th className="px-4 py-3">グレード</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((race) => {
-            const status = getRaceStatus(race.race_date, race.post_time);
-            const isFinished = status === "finished";
+    <>
+      {/* Mobile: card layout */}
+      <div className="space-y-2 sm:hidden">
+        {items.map((race) => {
+          const status = getRaceStatus(race.race_date, race.post_time);
+          const isFinished = status === "finished";
+          const courseName = race.racecourse_name ?? decodeRacecourse(race.race_id) ?? "-";
+          const course = formatCourse(race.surface, race.distance_m);
 
-            return (
-              <tr
-                key={race.id}
-                className="transition-colors"
-                style={{
-                  borderBottom: "1px solid var(--border)",
-                  cursor: "default",
-                  opacity: isFinished ? 0.5 : 1,
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor = "var(--bg-card-hover)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor = "transparent")
-                }
-              >
-                <td
-                  className="whitespace-nowrap px-4 py-3"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  {race.race_date}
-                </td>
-                <td
-                  className="whitespace-nowrap px-4 py-3 tabular-nums font-medium"
-                  style={{ color: status === "upcoming" ? "var(--text-primary)" : "var(--text-secondary)" }}
-                >
-                  {race.post_time ? race.post_time.slice(0, 5) : "-"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
+          return (
+            <Link
+              key={race.id}
+              href={`/races/${race.race_id}`}
+              className="block rounded-xl p-3 transition-colors"
+              style={{
+                backgroundColor: "var(--bg-card)",
+                border: "1px solid var(--border)",
+                opacity: isFinished ? 0.5 : 1,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  <span className="tabular-nums">{race.race_date}</span>
+                  <span className="tabular-nums font-medium" style={{ color: status === "upcoming" ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                    {race.post_time ? race.post_time.slice(0, 5) : ""}
+                  </span>
                   <StatusBadge status={status} />
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  {race.racecourse_name ?? decodeRacecourse(race.race_id) ?? "-"}
-                </td>
-                <td
-                  className="whitespace-nowrap px-4 py-3 text-center"
-                  style={{ color: "var(--text-secondary)" }}
+                </div>
+                <GradeBadge grade={race.graded_race ?? null} />
+              </div>
+              <div className="mt-1.5 font-medium text-sm" style={{ color: "var(--accent)" }}>
+                {race.race_name ?? decodeRaceName(race.race_id, race.race_number)}
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                <span>{courseName}</span>
+                <span>{race.race_number}R</span>
+                <span>{course}</span>
+                {race.track_condition && <span>{race.track_condition}</span>}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Desktop: table layout */}
+      <div className="hidden sm:block glass-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr
+              className="text-left text-xs font-medium uppercase tracking-wider"
+              style={{
+                backgroundColor: "var(--bg-elevated)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              <th className="px-4 py-3">日付</th>
+              <th className="px-4 py-3">発走</th>
+              <th className="px-4 py-3">状態</th>
+              <th className="px-4 py-3">競馬場</th>
+              <th className="px-4 py-3 text-center">R</th>
+              <th className="px-4 py-3">レース名</th>
+              <th className="px-4 py-3">コース</th>
+              <th className="px-4 py-3">天候</th>
+              <th className="px-4 py-3">馬場状態</th>
+              <th className="px-4 py-3">グレード</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((race) => {
+              const status = getRaceStatus(race.race_date, race.post_time);
+              const isFinished = status === "finished";
+
+              return (
+                <tr
+                  key={race.id}
+                  className="transition-colors"
+                  style={{
+                    borderBottom: "1px solid var(--border)",
+                    cursor: "default",
+                    opacity: isFinished ? 0.5 : 1,
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--bg-card-hover)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
                 >
-                  {race.race_number ?? "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/races/${race.race_id}`}
-                    className="cursor-pointer font-medium"
-                    style={{
-                      color: "var(--accent)",
-                      transition: "color 200ms ease-out",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.color = "var(--accent-hover)")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.color = "var(--accent)")
-                    }
+                  <td
+                    className="whitespace-nowrap px-4 py-3"
+                    style={{ color: "var(--text-secondary)" }}
                   >
-                    {race.race_name ?? decodeRaceName(race.race_id, race.race_number)}
-                  </Link>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  {formatCourse(race.surface, race.distance_m)}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  {race.weather ?? "-"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  {race.track_condition ?? "-"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <GradeBadge grade={race.graded_race ?? null} />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                    {race.race_date}
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-3 tabular-nums font-medium"
+                    style={{ color: status === "upcoming" ? "var(--text-primary)" : "var(--text-secondary)" }}
+                  >
+                    {race.post_time ? race.post_time.slice(0, 5) : "-"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <StatusBadge status={status} />
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {race.racecourse_name ?? decodeRacecourse(race.race_id) ?? "-"}
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-3 text-center"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {race.race_number ?? "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/races/${race.race_id}`}
+                      className="cursor-pointer font-medium"
+                      style={{
+                        color: "var(--accent)",
+                        transition: "color 200ms ease-out",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.color = "var(--accent-hover)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.color = "var(--accent)")
+                      }
+                    >
+                      {race.race_name ?? decodeRaceName(race.race_id, race.race_number)}
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {formatCourse(race.surface, race.distance_m)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {race.weather ?? "-"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {race.track_condition ?? "-"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <GradeBadge grade={race.graded_race ?? null} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

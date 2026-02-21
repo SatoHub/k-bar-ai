@@ -71,7 +71,7 @@ export default function RaceCalendar({
   }
 
   return (
-    <div className="glass-card p-4">
+    <div className="glass-card overflow-hidden p-3 sm:p-4">
       {/* Month navigation */}
       <div className="mb-3 flex items-center justify-between">
         <button

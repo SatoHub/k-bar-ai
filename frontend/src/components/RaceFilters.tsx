@@ -83,145 +83,150 @@ export default function RaceFilters({
   return (
     <form
       onSubmit={handleSubmit}
-      className="glass-card flex flex-wrap items-end gap-3 p-4"
+      className="glass-card p-4"
     >
-      {/* Year-Month select */}
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="filter-year-month"
-          className="text-sm font-medium"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          年月
-        </label>
-        <select
-          id="filter-year-month"
-          value={yearMonth}
-          onChange={(e) => {
-            setYearMonth(e.target.value);
-            if (!e.target.value) setWeek("");
-          }}
-          className="rounded-md px-3 py-2 text-sm focus:outline-none"
-          style={inputStyle}
-          disabled={!!date}
-        >
-          <option value="">すべて</option>
-          {yearMonthOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+        {/* Year-Month select */}
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="filter-year-month"
+            className="text-xs sm:text-sm font-medium"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            年月
+          </label>
+          <select
+            id="filter-year-month"
+            value={yearMonth}
+            onChange={(e) => {
+              setYearMonth(e.target.value);
+              if (!e.target.value) setWeek("");
+            }}
+            className="w-full rounded-md px-2 py-2 text-sm focus:outline-none sm:w-auto sm:px-3"
+            style={inputStyle}
+            disabled={!!date}
+          >
+            <option value="">すべて</option>
+            {yearMonthOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {/* Week select */}
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="filter-week"
-          className="text-sm font-medium"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          週
-        </label>
-        <select
-          id="filter-week"
-          value={week}
-          onChange={(e) => setWeek(e.target.value)}
-          className="rounded-md px-3 py-2 text-sm focus:outline-none"
-          style={inputStyle}
-          disabled={!yearMonth || !!date}
-        >
-          <option value="">全週</option>
-          <option value="1">第1週</option>
-          <option value="2">第2週</option>
-          <option value="3">第3週</option>
-          <option value="4">第4週</option>
-          <option value="5">第5週</option>
-        </select>
-      </div>
+        {/* Week select */}
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="filter-week"
+            className="text-xs sm:text-sm font-medium"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            週
+          </label>
+          <select
+            id="filter-week"
+            value={week}
+            onChange={(e) => setWeek(e.target.value)}
+            className="w-full rounded-md px-2 py-2 text-sm focus:outline-none sm:w-auto sm:px-3"
+            style={inputStyle}
+            disabled={!yearMonth || !!date}
+          >
+            <option value="">全週</option>
+            <option value="1">第1週</option>
+            <option value="2">第2週</option>
+            <option value="3">第3週</option>
+            <option value="4">第4週</option>
+            <option value="5">第5週</option>
+          </select>
+        </div>
 
-      {/* Specific date */}
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="filter-date"
-          className="text-sm font-medium"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          日付指定
-        </label>
-        <input
-          id="filter-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded-md px-3 py-2 text-sm focus:outline-none"
-          style={inputStyle}
-        />
-      </div>
+        {/* Specific date */}
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="filter-date"
+            className="text-xs sm:text-sm font-medium"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            日付指定
+          </label>
+          <input
+            id="filter-date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full rounded-md px-2 py-2 text-sm focus:outline-none sm:w-auto sm:px-3"
+            style={inputStyle}
+          />
+        </div>
 
-      {/* Racecourse */}
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="filter-racecourse"
-          className="text-sm font-medium"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          競馬場
-        </label>
-        <select
-          id="filter-racecourse"
-          value={racecourse}
-          onChange={(e) => setRacecourse(e.target.value)}
-          className="rounded-md px-3 py-2 text-sm focus:outline-none"
-          style={inputStyle}
-        >
-          <option value="">すべて</option>
-          {racecourses.map((rc) => (
-            <option key={rc} value={rc}>
-              {rc}
-            </option>
-          ))}
-        </select>
-      </div>
+        {/* Racecourse */}
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="filter-racecourse"
+            className="text-xs sm:text-sm font-medium"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            競馬場
+          </label>
+          <select
+            id="filter-racecourse"
+            value={racecourse}
+            onChange={(e) => setRacecourse(e.target.value)}
+            className="w-full rounded-md px-2 py-2 text-sm focus:outline-none sm:w-auto sm:px-3"
+            style={inputStyle}
+          >
+            <option value="">すべて</option>
+            {racecourses.map((rc) => (
+              <option key={rc} value={rc}>
+                {rc}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      <button
-        type="submit"
-        className="cursor-pointer rounded-md px-4 py-2 text-sm font-medium"
-        style={{
-          backgroundColor: "var(--accent)",
-          color: "#fff",
-          transition: "background-color 200ms ease-out",
-        }}
-        onMouseEnter={(e) =>
-          (e.currentTarget.style.backgroundColor = "var(--accent-hover)")
-        }
-        onMouseLeave={(e) =>
-          (e.currentTarget.style.backgroundColor = "var(--accent)")
-        }
-      >
-        検索
-      </button>
-      <button
-        type="button"
-        onClick={handleClear}
-        className="cursor-pointer rounded-md px-4 py-2 text-sm font-medium"
-        style={{
-          backgroundColor: "transparent",
-          border: "1px solid var(--border-light)",
-          color: "var(--text-secondary)",
-          transition: "background-color 200ms ease-out, color 200ms ease-out",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--bg-elevated)";
-          e.currentTarget.style.color = "var(--text-primary)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "transparent";
-          e.currentTarget.style.color = "var(--text-secondary)";
-        }}
-      >
-        クリア
-      </button>
+        {/* Buttons */}
+        <div className="col-span-2 flex gap-2 sm:col-span-1">
+          <button
+            type="submit"
+            className="flex-1 cursor-pointer rounded-md px-4 py-2 text-sm font-medium sm:flex-none"
+            style={{
+              backgroundColor: "var(--accent)",
+              color: "#fff",
+              transition: "background-color 200ms ease-out",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor = "var(--accent-hover)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor = "var(--accent)")
+            }
+          >
+            検索
+          </button>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex-1 cursor-pointer rounded-md px-4 py-2 text-sm font-medium sm:flex-none"
+            style={{
+              backgroundColor: "transparent",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-secondary)",
+              transition: "background-color 200ms ease-out, color 200ms ease-out",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--bg-elevated)";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            クリア
+          </button>
+        </div>
+      </div>
     </form>
   );
 }
