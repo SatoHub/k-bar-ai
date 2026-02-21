@@ -87,7 +87,7 @@ export default function RaceFilters({
     >
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
         {/* Year-Month select */}
-        <div className="flex flex-col gap-1">
+        <div className="min-w-0 flex flex-col gap-1">
           <label
             htmlFor="filter-year-month"
             className="text-xs sm:text-sm font-medium"
@@ -116,7 +116,7 @@ export default function RaceFilters({
         </div>
 
         {/* Week select */}
-        <div className="flex flex-col gap-1">
+        <div className="min-w-0 flex flex-col gap-1">
           <label
             htmlFor="filter-week"
             className="text-xs sm:text-sm font-medium"
@@ -142,7 +142,7 @@ export default function RaceFilters({
         </div>
 
         {/* Specific date */}
-        <div className="flex flex-col gap-1">
+        <div className="col-span-2 min-w-0 flex flex-col gap-1 sm:col-span-1">
           <label
             htmlFor="filter-date"
             className="text-xs sm:text-sm font-medium"
@@ -161,7 +161,7 @@ export default function RaceFilters({
         </div>
 
         {/* Racecourse */}
-        <div className="flex flex-col gap-1">
+        <div className="col-span-2 min-w-0 flex flex-col gap-1 sm:col-span-1">
           <label
             htmlFor="filter-racecourse"
             className="text-xs sm:text-sm font-medium"
