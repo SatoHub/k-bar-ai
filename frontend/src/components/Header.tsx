@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -13,6 +14,11 @@ const NAV_ITEMS = [
 
 export default function Header() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   return (
     <header className="sticky top-0 z-50 border-b" style={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border)" }}>
@@ -25,7 +31,8 @@ export default function Header() {
             <span>K-Bar AI</span>
           </Link>
 
-          <nav className="flex gap-1">
+          {/* Desktop nav */}
+          <nav className="hidden md:flex gap-1">
             {NAV_ITEMS.map(({ href, label }) => {
               const active =
                 href === "/"
@@ -58,8 +65,56 @@ export default function Header() {
               );
             })}
           </nav>
+
+          {/* Mobile hamburger button */}
+          <button
+            type="button"
+            className="md:hidden flex items-center justify-center h-9 w-9 rounded-lg transition-colors"
+            style={{ color: "var(--text-secondary)" }}
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="メニュー"
+          >
+            {menuOpen ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+                <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+                <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Mobile menu */}
+      {menuOpen && (
+        <nav
+          className="md:hidden border-t px-4 py-2 space-y-1"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-surface)" }}
+        >
+          {NAV_ITEMS.map(({ href, label }) => {
+            const active =
+              href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMenuOpen(false)}
+                className="block rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: active ? "var(--accent-muted)" : "transparent",
+                  color: active ? "var(--accent-hover)" : "var(--text-secondary)",
+                }}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </header>
   );
 }

@@ -247,10 +247,10 @@ export default function RaceDetailPage({
             >
               オッズ
             </h2>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {odds.fetched_at && (
                 <span
-                  className="text-xs"
+                  className="hidden sm:inline text-xs"
                   style={{ color: "var(--text-muted)" }}
                 >
                   更新: {new Date(odds.fetched_at).toLocaleString("ja-JP")}

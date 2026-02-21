@@ -311,10 +311,10 @@ export default function SimulatePage({
                     単勝オッズ
                   </h2>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   {odds.fetched_at && (
                     <span
-                      className="text-[10px]"
+                      className="hidden sm:inline text-[10px]"
                       style={{ color: "var(--text-muted)" }}
                     >
                       {new Date(odds.fetched_at).toLocaleString("ja-JP")}
