@@ -44,14 +44,11 @@ test.describe("レース一覧", () => {
     await expect(page.locator("main h1, main h2").first()).toBeVisible({ timeout: 10000 });
   });
 
-  test("カレンダーが表示される", async ({ page, isMobile }) => {
+  test("カレンダーが表示される", async ({ page }) => {
     await page.goto("/races");
-    if (isMobile) {
-      // SP: カード表示なのでカレンダーのgridを確認
-      await expect(page.locator(".grid.grid-cols-7").first()).toBeVisible({ timeout: 10000 });
-    } else {
-      await expect(page.locator("table").first()).toBeVisible({ timeout: 10000 });
-    }
+    // カレンダーの7列グリッドが表示される（PC/SPで別コンテナなので:visibleで絞る）
+    const calendar = page.locator(".grid.grid-cols-7").and(page.locator(":visible"));
+    await expect(calendar.first()).toBeVisible({ timeout: 10000 });
   });
 });
 
