@@ -251,9 +251,77 @@ def build_weekly_report_flex(report: dict) -> dict:
       - total_invested: int
       - total_returned: int
       - roi: float (percent)
+      - hit_rates: dict (optional, per bet_type hit rates)
     """
     roi = report.get("roi", 0)
     roi_color = "#1DB446" if roi >= 100 else "#DD4444"
+
+    body_contents: list[dict] = [
+        {
+            "type": "text",
+            "text": report.get("period", ""),
+            "size": "xs",
+            "color": "#888888",
+        },
+        {"type": "separator", "margin": "md"},
+        _kv_row("総ベット数", str(report.get("total_bets", 0))),
+        _kv_row("的中数", str(report.get("wins", 0))),
+        _kv_row("投資額", f"{report.get('total_invested', 0):,}円"),
+        _kv_row("回収額", f"{report.get('total_returned', 0):,}円"),
+        {"type": "separator", "margin": "md"},
+        {
+            "type": "box",
+            "layout": "horizontal",
+            "margin": "md",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "回収率",
+                    "size": "md",
+                    "weight": "bold",
+                    "flex": 3,
+                    "color": "#333333",
+                },
+                {
+                    "type": "text",
+                    "text": f"{roi:.1f}%",
+                    "size": "xl",
+                    "weight": "bold",
+                    "flex": 3,
+                    "align": "end",
+                    "color": roi_color,
+                },
+            ],
+        },
+    ]
+
+    # Add per bet_type hit rates if available
+    hit_rates = report.get("hit_rates", {})
+    if hit_rates:
+        body_contents.append({"type": "separator", "margin": "md"})
+        body_contents.append(
+            {
+                "type": "text",
+                "text": "馬券種別 的中率",
+                "size": "sm",
+                "weight": "bold",
+                "margin": "md",
+                "color": "#333333",
+            }
+        )
+        label_map = {
+            "tansho": "単勝",
+            "fukusho": "複勝",
+            "umaren": "馬連",
+            "wide": "ワイド",
+            "sanrenpuku": "3連複",
+        }
+        for key, label in label_map.items():
+            hr = hit_rates.get(key)
+            if hr and hr.get("total", 0) > 0:
+                body_contents.append(
+                    _kv_row(label, f"{hr['hits']}/{hr['total']} ({hr['rate']}%)")
+                )
 
     return {
         "type": "bubble",
@@ -275,44 +343,7 @@ def build_weekly_report_flex(report: dict) -> dict:
         "body": {
             "type": "box",
             "layout": "vertical",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": report.get("period", ""),
-                    "size": "xs",
-                    "color": "#888888",
-                },
-                {"type": "separator", "margin": "md"},
-                _kv_row("総ベット数", str(report.get("total_bets", 0))),
-                _kv_row("的中数", str(report.get("wins", 0))),
-                _kv_row("投資額", f"{report.get('total_invested', 0):,}円"),
-                _kv_row("回収額", f"{report.get('total_returned', 0):,}円"),
-                {"type": "separator", "margin": "md"},
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "margin": "md",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": "回収率",
-                            "size": "md",
-                            "weight": "bold",
-                            "flex": 3,
-                            "color": "#333333",
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{roi:.1f}%",
-                            "size": "xl",
-                            "weight": "bold",
-                            "flex": 3,
-                            "align": "end",
-                            "color": roi_color,
-                        },
-                    ],
-                },
-            ],
+            "contents": body_contents,
         },
     }
 
@@ -377,6 +408,230 @@ def build_interactive_flex(
         }
 
     return bubble
+
+
+def build_miss_summary_flex(misses: list[dict]) -> dict:
+    """Build an informational Flex Message summarizing today's AI misses.
+
+    Each item in *misses*:
+      - race_name: str
+      - ai_top3: list[str]
+      - actual_top3: list[str]
+      - auto_reason: str (auto-detected reason from DB data)
+    """
+    body_contents: list[dict] = [
+        {
+            "type": "text",
+            "text": "本日のAIハズレまとめ",
+            "weight": "bold",
+            "size": "md",
+            "color": "#333333",
+        },
+        {
+            "type": "text",
+            "text": f"{len(misses)}レースでAI本命が3着外",
+            "size": "xs",
+            "color": "#888888",
+            "margin": "sm",
+        },
+        {"type": "separator", "margin": "md"},
+    ]
+
+    for miss in misses[:5]:
+        race_name = miss.get("race_name", "")
+        ai = miss.get("ai_top3", [])
+        actual = miss.get("actual_top3", [])
+        auto_reason = miss.get("auto_reason", "")
+
+        race_box: list[dict] = [
+            {
+                "type": "text",
+                "text": race_name,
+                "size": "sm",
+                "weight": "bold",
+                "color": "#333333",
+                "wrap": True,
+            },
+        ]
+
+        if ai and actual:
+            race_box.append(
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "sm",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": f"AI: {' > '.join(ai[:3])}",
+                            "size": "xs",
+                            "color": "#DD4444",
+                        },
+                        {
+                            "type": "text",
+                            "text": f"実: {' > '.join(actual[:3])}",
+                            "size": "xs",
+                            "color": "#1DB446",
+                        },
+                    ],
+                }
+            )
+
+        if auto_reason:
+            race_box.append(
+                {
+                    "type": "text",
+                    "text": auto_reason,
+                    "size": "xxs",
+                    "color": "#999999",
+                    "margin": "sm",
+                }
+            )
+
+        body_contents.append(
+            {
+                "type": "box",
+                "layout": "vertical",
+                "margin": "lg",
+                "contents": race_box,
+            }
+        )
+
+    return {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#DD4444",
+            "paddingAll": "12px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "K-Bar AI",
+                    "color": "#ffffff",
+                    "size": "xs",
+                    "weight": "bold",
+                },
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": body_contents,
+        },
+    }
+
+
+def build_monthly_proposal_flex(
+    month_str: str,
+    proposals: list[dict],
+) -> dict:
+    """Build a Flex Message for monthly improvement proposals.
+
+    Each proposal: {id, proposal_type, description, priority}
+    """
+    body_contents: list[dict] = [
+        {
+            "type": "text",
+            "text": f"{month_str} 改善提案",
+            "weight": "bold",
+            "size": "lg",
+            "color": "#333333",
+        },
+        {"type": "separator", "margin": "md"},
+    ]
+
+    bubbles: list[dict] = []
+
+    for i, proposal in enumerate(proposals[:5]):
+        proposal_id = proposal.get("id", "")
+        desc = proposal.get("description", "")
+
+        proposal_body: list[dict] = [
+            {
+                "type": "text",
+                "text": f"提案 {i + 1}",
+                "weight": "bold",
+                "size": "md",
+                "color": "#333333",
+            },
+            {
+                "type": "text",
+                "text": desc,
+                "size": "sm",
+                "color": "#666666",
+                "wrap": True,
+                "margin": "md",
+            },
+        ]
+
+        proposal_buttons: list[dict] = [
+            {
+                "type": "button",
+                "style": "primary",
+                "margin": "sm",
+                "height": "sm",
+                "action": {
+                    "type": "postback",
+                    "label": "承認",
+                    "data": f"action=proposal_response&proposal_id={proposal_id}&response=approved",
+                },
+            },
+            {
+                "type": "button",
+                "style": "secondary",
+                "margin": "sm",
+                "height": "sm",
+                "action": {
+                    "type": "postback",
+                    "label": "保留",
+                    "data": f"action=proposal_response&proposal_id={proposal_id}&response=deferred",
+                },
+            },
+        ]
+
+        bubbles.append(
+            {
+                "type": "bubble",
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "backgroundColor": "#FF8C00",
+                    "paddingAll": "15px",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": f"K-Bar AI 改善提案",
+                            "color": "#ffffff",
+                            "size": "sm",
+                            "weight": "bold",
+                        },
+                    ],
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": proposal_body,
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "spacing": "sm",
+                    "contents": proposal_buttons,
+                },
+            }
+        )
+
+    # If only one proposal, return a single bubble
+    if len(bubbles) == 1:
+        return bubbles[0]
+
+    # Multiple proposals: return a carousel
+    return {
+        "type": "carousel",
+        "contents": bubbles,
+    }
 
 
 # ------------------------------------------------------------------

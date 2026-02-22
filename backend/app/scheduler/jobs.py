@@ -25,6 +25,22 @@ def _today_jst() -> date:
     return datetime.now(tz).date()
 
 
+def _auto_detect_miss_reason(race, finish_pos: int | None) -> str:
+    """Auto-detect miss reason from race data (no user input needed)."""
+    parts = []
+    if race.surface:
+        parts.append(race.surface)
+    if race.distance_m:
+        parts.append(f"{race.distance_m}m")
+    if finish_pos and finish_pos > 10:
+        return f"{' '.join(parts)} 大敗({finish_pos}着)"
+    if finish_pos and finish_pos > 5:
+        return f"{' '.join(parts)} 中団以下({finish_pos}着)"
+    if finish_pos and finish_pos > 3:
+        return f"{' '.join(parts)} 惜敗({finish_pos}着)"
+    return f"{' '.join(parts)} 着外" if parts else "着外"
+
+
 def register_jobs(
     scheduler: AsyncIOScheduler, manager: SchedulerManager
 ) -> None:
@@ -123,7 +139,40 @@ def register_jobs(
         replace_existing=True,
     )
 
-    logger.info("Registered 8 scheduler jobs")
+    # 8. Weekly report: Monday at 8:00 JST
+    scheduler.add_job(
+        job_weekly_report,
+        CronTrigger(
+            day_of_week=settings.SCHED_WEEKLY_REPORT_DAY_OF_WEEK,
+            hour=settings.SCHED_WEEKLY_REPORT_HOUR,
+            minute=settings.SCHED_WEEKLY_REPORT_MINUTE,
+            timezone=tz,
+        ),
+        id="weekly_report",
+        name="週次レポート送信",
+        kwargs={"manager": manager},
+        replace_existing=True,
+    )
+
+    # 9. Monthly proposal: 1st of each month at 8:00 JST
+    scheduler.add_job(
+        job_monthly_proposal,
+        CronTrigger(
+            day=settings.SCHED_MONTHLY_PROPOSAL_DAY,
+            hour=settings.SCHED_MONTHLY_PROPOSAL_HOUR,
+            minute=settings.SCHED_MONTHLY_PROPOSAL_MINUTE,
+            timezone=tz,
+        ),
+        id="monthly_proposal",
+        name="月次改善提案送信",
+        kwargs={"manager": manager},
+        replace_existing=True,
+    )
+
+    # TODO: 3-month summary job (enable via SCHED_QUARTERLY_SUMMARY_ENABLED)
+    # TODO: JRA-VAN reminder (trigger at JRAVAN_REMINDER_MONTH)
+
+    logger.info("Registered 10 scheduler jobs")
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +489,7 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 
 async def job_notify_results(manager: SchedulerManager) -> None:
-    """Send LINE notification with today's race results summary."""
+    """Send LINE notification with today's race results summary + miss confirmations."""
     logger.info("=== Job: Notify results starting ===")
     try:
         from sqlalchemy import select
@@ -448,6 +497,7 @@ async def job_notify_results(manager: SchedulerManager) -> None:
 
         from app.models.entry import RaceEntry
         from app.models.horse import Horse
+        from app.models.prediction import PredictionLog
         from app.models.race import Race
         from app.services.notification_service import get_notification_service
 
@@ -482,12 +532,15 @@ async def job_notify_results(manager: SchedulerManager) -> None:
                 return
 
             results_data = []
+            miss_candidates = []  # Races where AI top-1 missed fukusho
+
             for race in races:
+                race_id_int = race.id
                 # Get top 3 finishers
                 entry_stmt = (
                     select(RaceEntry, Horse)
                     .join(Horse, RaceEntry.horse_id == Horse.id)
-                    .where(RaceEntry.race_id == race.id)
+                    .where(RaceEntry.race_id == race_id_int)
                     .where(RaceEntry.finish_position.isnot(None))
                     .order_by(RaceEntry.finish_position)
                     .limit(3)
@@ -498,17 +551,75 @@ async def job_notify_results(manager: SchedulerManager) -> None:
                     "race_name": race.race_name or "",
                     "racecourse_name": race.racecourse_name or "",
                     "race_number": race.race_number or 0,
-                    "bet_result": "none",  # Bet matching is future work
+                    "bet_result": "none",
                     "top3": [
                         {"position": e.finish_position, "name": h.name}
                         for e, h in top3_rows
                     ],
                 })
+
+                # Check if AI top-1 missed fukusho (not in top 3)
+                pred_stmt = (
+                    select(PredictionLog, Horse)
+                    .join(Horse, PredictionLog.horse_id == Horse.id)
+                    .where(PredictionLog.race_id == race_id_int)
+                    .order_by(PredictionLog.predicted_score.desc())
+                    .limit(3)
+                )
+                pred_rows = (await session.execute(pred_stmt)).all()
+
+                if pred_rows:
+                    ai_top1_horse_id = pred_rows[0][0].horse_id
+                    finish_stmt = (
+                        select(RaceEntry.finish_position)
+                        .where(
+                            RaceEntry.race_id == race_id_int,
+                            RaceEntry.horse_id == ai_top1_horse_id,
+                        )
+                    )
+                    finish_pos = (await session.execute(finish_stmt)).scalar()
+
+                    if finish_pos is None or finish_pos > 3:
+                        actual_top3_names = [h.name for _, h in top3_rows[:3]]
+                        ai_top3_names = [h.name for _, h in pred_rows[:3]]
+                        # Auto-detect reason from race data
+                        auto_reason = _auto_detect_miss_reason(race, finish_pos)
+                        miss_candidates.append({
+                            "race_name": f"{race.racecourse_name or ''} {race.race_number or ''}R {race.race_name or ''}",
+                            "race_id": race.race_id,
+                            "ai_top3": ai_top3_names,
+                            "actual_top3": actual_top3_names,
+                            "auto_reason": auto_reason,
+                        })
+
+                        # Auto-save to miss_reason_logs
+                        from app.models.miss_reason import MissReasonLog
+                        log = MissReasonLog(
+                            race_id=race.id,
+                            bet_type="fukusho",
+                            reason=auto_reason,
+                        )
+                        session.add(log)
+
+            await session.commit()
         await engine.dispose()
 
+        # Send results notification
         sent = await svc.push_results_notification(results_data)
 
-        detail = f"Sent results for {len(results_data)} races" if sent else "Send failed"
+        # Send miss summary (single message, max 5 races)
+        miss_sent = False
+        if miss_candidates:
+            try:
+                miss_sent = await svc.push_miss_summary(miss_candidates[:5])
+            except Exception as e:
+                logger.warning("Failed to send miss summary: %s", e)
+
+        detail = f"Sent results for {len(results_data)} races"
+        if miss_candidates:
+            detail += f", {len(miss_candidates)} misses"
+            if miss_sent:
+                detail += " (summary sent)"
         status = "success" if sent else "error"
         logger.info("Notify results: %s", detail)
         manager.record_job_run("notify_results", status=status, detail=detail)
@@ -516,3 +627,112 @@ async def job_notify_results(manager: SchedulerManager) -> None:
     except Exception as e:
         logger.error("Notify results failed: %s", e, exc_info=True)
         manager.record_job_run("notify_results", status="error", detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Job: Weekly report
+# ---------------------------------------------------------------------------
+
+async def job_weekly_report(manager: SchedulerManager) -> None:
+    """Send weekly performance report via LINE."""
+    logger.info("=== Job: Weekly report starting ===")
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+        from app.services.notification_service import get_notification_service
+        from app.services.weekly_report_service import build_weekly_report_data
+
+        svc = get_notification_service()
+        if not svc.is_configured:
+            logger.info("LINE not configured, skipping weekly_report")
+            manager.record_job_run(
+                "weekly_report", status="skipped", detail="LINE not configured"
+            )
+            return
+
+        engine = create_async_engine(settings.database_url)
+        async with AsyncSession(engine) as session:
+            report = await build_weekly_report_data(session)
+        await engine.dispose()
+
+        sent = await svc.push_weekly_report(report)
+
+        detail = f"Weekly report sent ({report.get('period', '')})" if sent else "Send failed"
+        status = "success" if sent else "error"
+        logger.info("Weekly report: %s", detail)
+        manager.record_job_run("weekly_report", status=status, detail=detail)
+
+    except Exception as e:
+        logger.error("Weekly report failed: %s", e, exc_info=True)
+        manager.record_job_run("weekly_report", status="error", detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Job: Monthly proposal
+# ---------------------------------------------------------------------------
+
+async def job_monthly_proposal(manager: SchedulerManager) -> None:
+    """Generate and send monthly improvement proposals via LINE."""
+    logger.info("=== Job: Monthly proposal starting ===")
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+        from app.models.improvement_proposal import ImprovementProposal
+        from app.services.monthly_proposal_service import generate_monthly_proposals
+        from app.services.notification_service import get_notification_service
+
+        svc = get_notification_service()
+        if not svc.is_configured:
+            logger.info("LINE not configured, skipping monthly_proposal")
+            manager.record_job_run(
+                "monthly_proposal", status="skipped", detail="LINE not configured"
+            )
+            return
+
+        engine = create_async_engine(settings.database_url)
+        async with AsyncSession(engine) as session:
+            proposals = await generate_monthly_proposals(session)
+
+            if not proposals:
+                logger.info("No monthly proposals generated")
+                await engine.dispose()
+                manager.record_job_run(
+                    "monthly_proposal", status="skipped", detail="No proposals"
+                )
+                return
+
+            # Save proposals to DB
+            import datetime
+            today = _today_jst()
+            last_month = (today.replace(day=1) - timedelta(days=1))
+            month_date = last_month.replace(day=1)
+
+            saved_proposals = []
+            for p in proposals:
+                db_proposal = ImprovementProposal(
+                    month=month_date,
+                    proposal_type=p["proposal_type"],
+                    description=p["description"],
+                    status="pending",
+                )
+                session.add(db_proposal)
+                await session.flush()
+                saved_proposals.append({
+                    "id": str(db_proposal.id),
+                    "proposal_type": p["proposal_type"],
+                    "description": p["description"],
+                    "priority": p.get("priority", 99),
+                })
+            await session.commit()
+        await engine.dispose()
+
+        sent = await svc.push_monthly_proposal(saved_proposals)
+
+        detail = f"Sent {len(saved_proposals)} proposals" if sent else "Send failed"
+        status = "success" if sent else "error"
+        logger.info("Monthly proposal: %s", detail)
+        manager.record_job_run("monthly_proposal", status=status, detail=detail)
+
+    except Exception as e:
+        logger.error("Monthly proposal failed: %s", e, exc_info=True)
+        manager.record_job_run("monthly_proposal", status="error", detail=str(e))

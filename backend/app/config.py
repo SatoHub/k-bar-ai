@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     SCHED_NOTIFY_PREDICTION_MINUTE: int = 0
     SCHED_NOTIFY_RESULTS_HOUR: int = 20
     SCHED_NOTIFY_RESULTS_MINUTE: int = 0
+    # Weekly report: Monday at 8:00 JST
+    SCHED_WEEKLY_REPORT_HOUR: int = 8
+    SCHED_WEEKLY_REPORT_MINUTE: int = 0
+    SCHED_WEEKLY_REPORT_DAY_OF_WEEK: str = "mon"
+    # Monthly proposal: 1st of each month at 8:00 JST
+    SCHED_MONTHLY_PROPOSAL_DAY: int = 1
+    SCHED_MONTHLY_PROPOSAL_HOUR: int = 8
+    SCHED_MONTHLY_PROPOSAL_MINUTE: int = 0
+    # Future: quarterly summary (enabled after 3 months of operation)
+    SCHED_QUARTERLY_SUMMARY_ENABLED: bool = False
+    # Future: JRA-VAN reminder month (adjust based on operation start)
+    JRAVAN_REMINDER_MONTH: int = 5
 
     @property
     def database_url(self) -> str:

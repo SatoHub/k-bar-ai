@@ -125,6 +125,40 @@ class NotificationService:
         flex_dict = build_weekly_report_flex(report)
         return await self.push_flex("週次レポート", flex_dict, category="weekly")
 
+    async def push_miss_summary(self, misses: list[dict]) -> bool:
+        """Send a summary of today's AI misses (informational, no buttons).
+
+        Each item: {race_name, race_id, ai_top3, actual_top3, auto_reason}
+        """
+        from app.services.line_templates import build_miss_summary_flex
+
+        if not misses:
+            logger.info("No misses to notify")
+            return False
+
+        flex_dict = build_miss_summary_flex(misses)
+        return await self.push_flex(
+            f"本日のAIハズレまとめ ({len(misses)}件)",
+            flex_dict,
+            category="miss_summary",
+        )
+
+    async def push_monthly_proposal(self, proposals: list[dict]) -> bool:
+        """Send monthly improvement proposals via Flex Message."""
+        from app.services.line_templates import build_monthly_proposal_flex
+
+        if not proposals:
+            logger.info("No monthly proposals to notify")
+            return False
+
+        import datetime
+        today = datetime.date.today()
+        last_month = (today.replace(day=1) - datetime.timedelta(days=1))
+        month_str = f"{last_month.year}年{last_month.month}月"
+
+        flex_dict = build_monthly_proposal_flex(month_str, proposals)
+        return await self.push_flex("月次改善提案", flex_dict, category="monthly_proposal")
+
     async def push_test_message(self) -> bool:
         """Send a test message to verify configuration."""
         text = "K-Bar AI LINE通知テスト\n設定が正常に動作しています。"

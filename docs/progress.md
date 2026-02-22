@@ -1,6 +1,76 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-02-21（Step C: LINE通知システム実装）
+**最終更新:** 2026-02-22（LINE通知機能拡張）
+
+---
+
+## 前回セッション（2026-02-22 第2回）の作業内容
+
+### LINE通知機能拡張（Step 4-6: 週次レポート・ハズレ原因・月次改善提案）
+
+**完了:**
+- [x] 新モデル: `MissReasonLog`（ハズレ原因記録）、`ImprovementProposal`（改善提案）
+- [x] Alembicマイグレーション `c3d4e5f6a789` 作成（miss_reason_logs, improvement_proposals）
+- [x] `config.py` に週次レポート・月次提案・将来用設定6項目追加
+- [x] `weekly_report_service.py` 新規: 過去7日間の賭け・AI的中率集計
+- [x] `monthly_proposal_service.py` 新規: ルールベース改善提案生成（再学習推奨・馬場別分析・トレンド）
+- [x] `line_templates.py` 拡張: `build_weekly_report_flex()` にbet_type別的中率表示追加
+- [x] `line_templates.py` 新規: `build_miss_reason_flex()`, `build_monthly_proposal_flex()`
+- [x] `notification_service.py` に `push_miss_confirmation()`, `push_monthly_proposal()` 追加
+- [x] `jobs.py`: 週次レポートジョブ（月曜8:00）、月次提案ジョブ（毎月1日8:00）追加
+- [x] `jobs.py`: `job_notify_results` にハズレ確認送信（複勝ハズレのAI1位、最大3件）追加
+- [x] `notifications.py`: PostbackEvent ハンドラに `miss_reason`/`proposal_response` 処理追加
+- [x] 将来用: `SCHED_QUARTERLY_SUMMARY_ENABLED`, `JRAVAN_REMINDER_MONTH` + TODOコメント
+- [x] 全ファイル構文チェック通過
+
+**新規ファイル:**
+- `backend/app/models/miss_reason.py`
+- `backend/app/models/improvement_proposal.py`
+- `backend/app/services/weekly_report_service.py`
+- `backend/app/services/monthly_proposal_service.py`
+- `backend/alembic/versions/c3d4e5f6a789_add_miss_reason_and_proposals.py`
+
+**変更ファイル:**
+- `backend/app/models/__init__.py` — 2モデル登録
+- `backend/app/config.py` — 6設定追加
+- `backend/app/scheduler/jobs.py` — 3ジョブ追加 + results拡張
+- `backend/app/services/notification_service.py` — 2メソッド追加
+- `backend/app/services/line_templates.py` — 3テンプレート追加 + 1拡張
+- `backend/app/api/v1/notifications.py` — postback処理追加
+
+**次にやること:**
+- [ ] `alembic upgrade head` でマイグレーション適用
+- [ ] VPSデプロイ
+- [ ] `POST /api/v1/notifications/test` でLINE送信確認
+- [ ] LINEでpostbackボタン動作確認
+
+---
+
+## 前回セッション（2026-02-22 第1回）の作業内容
+
+### SP版レスポンシブ対応
+
+**完了:**
+- [x] RaceTable: モバイルカードレイアウト（10列テーブル→コンパクトカード、sm:hiddenで切替）
+- [x] RaceFilters: 2列グリッドレイアウト（横はみ出し解消）
+- [x] RaceCalendar: overflow-hidden追加、モバイルpadding最適化
+- [x] PredictionTable: モバイルカードレイアウト + デスクトップ全幅展開行
+- [x] Header: ハンバーガーメニュー対応確認済み
+- [x] Playwright E2Eテスト: PC/SPスモークテスト19件 + SP横はみ出しテスト5件、全パス
+- [x] VPSデプロイ完了
+
+**未完了:**
+- [ ] RaceFilters: 日付指定（input[type="date"]）と競馬場（select）の見た目の幅が揃わない
+
+**変更ファイル:**
+- `frontend/src/components/RaceTable.tsx` — モバイルカード化
+- `frontend/src/components/RaceFilters.tsx` — グリッドレイアウト
+- `frontend/src/components/RaceCalendar.tsx` — overflow-hidden
+- `frontend/src/components/PredictionTable.tsx` — モバイルカード+全幅展開行
+- `frontend/src/app/races/page.tsx` — min-w-0追加
+- `frontend/e2e/vps-smoke.spec.ts` — スモークテスト
+- `frontend/e2e/sp-overflow.spec.ts` — 横はみ出しテスト
+- `frontend/playwright.config.ts` — Playwright設定
 
 ---
 
@@ -191,7 +261,7 @@ frontend/src/app/bets/page.tsx
 ### 未着手ステップ
 
 - [x] **Step 4:** LINE通知システムの構築（コード実装完了、要LINE Console設定）
-- [ ] **Step 5:** 自動レポート生成（週次・月次・3ヶ月次）
+- [x] **Step 5:** 自動レポート・改善提案（週次レポート・ハズレ原因確認・月次改善提案）
 - [ ] **Step 6:** モデル自動再学習・切り替え（MLOps）
 
 ---

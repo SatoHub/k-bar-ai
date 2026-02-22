@@ -61,6 +61,7 @@ async def line_webhook(request: Request):
                 "incoming", "text", "webhook", "success",
                 {"event": "postback", "data": data},
             )
+            await _handle_postback(svc, data)
 
         elif isinstance(event, MessageEvent):
             logger.info("LINE MessageEvent received")
@@ -145,3 +146,127 @@ async def list_notification_logs(
         page=page,
         per_page=per_page,
     )
+
+
+# ------------------------------------------------------------------
+# Postback event handler
+# ------------------------------------------------------------------
+
+
+async def _handle_postback(svc, data: str) -> None:
+    """Parse and process LINE postback data."""
+    from urllib.parse import parse_qs
+
+    params = parse_qs(data)
+    action = params.get("action", [None])[0]
+
+    if action == "miss_reason":
+        await _handle_miss_reason(svc, params)
+    elif action == "proposal_response":
+        await _handle_proposal_response(svc, params)
+    else:
+        logger.info("Unknown postback action: %s", action)
+
+
+async def _handle_miss_reason(svc, params: dict) -> None:
+    """Handle miss reason postback — save to DB and reply."""
+    import datetime
+    import uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+    from app.models.miss_reason import MissReasonLog
+    from app.models.race import Race
+
+    race_id_str = (params.get("race_id") or [None])[0]
+    reason = (params.get("reason") or [None])[0]
+
+    if not race_id_str or not reason:
+        logger.warning("miss_reason postback missing race_id or reason")
+        return
+
+    try:
+        engine = create_async_engine(settings.database_url)
+        async with AsyncSession(engine) as session:
+            # Find race by race_id string
+            stmt = select(Race).where(Race.race_id == race_id_str)
+            race = (await session.execute(stmt)).scalar_one_or_none()
+
+            if not race:
+                logger.warning("Race not found for race_id=%s", race_id_str)
+                await svc.push_text(f"レースが見つかりませんでした: {race_id_str}")
+                await engine.dispose()
+                return
+
+            log = MissReasonLog(
+                race_id=race.id,
+                bet_type="fukusho",
+                reason=reason,
+            )
+            session.add(log)
+            await session.commit()
+        await engine.dispose()
+
+        await svc.push_text(f"ハズレ原因「{reason}」を記録しました。")
+        logger.info("Saved miss reason: race=%s reason=%s", race_id_str, reason)
+
+    except Exception as e:
+        logger.error("Failed to save miss reason: %s", e, exc_info=True)
+        await svc.push_text("記録に失敗しました。再度お試しください。")
+
+
+async def _handle_proposal_response(svc, params: dict) -> None:
+    """Handle proposal approval/deferral postback."""
+    import datetime
+    import uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+    from app.models.improvement_proposal import ImprovementProposal
+
+    proposal_id_str = (params.get("proposal_id") or [None])[0]
+    response = (params.get("response") or [None])[0]
+
+    if not proposal_id_str or not response:
+        logger.warning("proposal_response postback missing proposal_id or response")
+        return
+
+    try:
+        proposal_uuid = uuid.UUID(proposal_id_str)
+    except ValueError:
+        logger.warning("Invalid proposal_id: %s", proposal_id_str)
+        return
+
+    try:
+        engine = create_async_engine(settings.database_url)
+        async with AsyncSession(engine) as session:
+            stmt = select(ImprovementProposal).where(
+                ImprovementProposal.id == proposal_uuid
+            )
+            proposal = (await session.execute(stmt)).scalar_one_or_none()
+
+            if not proposal:
+                logger.warning("Proposal not found: %s", proposal_id_str)
+                await svc.push_text("提案が見つかりませんでした。")
+                await engine.dispose()
+                return
+
+            proposal.status = response  # "approved" or "deferred"
+            proposal.user_response_at = datetime.datetime.now(datetime.timezone.utc)
+            await session.commit()
+        await engine.dispose()
+
+        if response == "approved":
+            await svc.push_text("承認しました。次回学習時に反映します。")
+        elif response == "deferred":
+            await svc.push_text("保留にしました。")
+        else:
+            await svc.push_text(f"ステータスを「{response}」に更新しました。")
+
+        logger.info("Proposal %s set to %s", proposal_id_str, response)
+
+    except Exception as e:
+        logger.error("Failed to update proposal: %s", e, exc_info=True)
+        await svc.push_text("更新に失敗しました。再度お試しください。")
