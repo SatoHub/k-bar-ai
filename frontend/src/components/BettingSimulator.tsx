@@ -4,13 +4,14 @@ import { useState, useMemo, useEffect } from "react";
 import { createBet, type RaceEntry, type BetRecord } from "@/lib/api";
 
 const BET_TYPES = [
-  { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる" },
-  { value: "fukusho", label: "複勝", picks: 1, ordered: false, desc: "3着以内を当てる" },
-  { value: "umaren", label: "馬連", picks: 2, ordered: false, desc: "1-2着の組合せ" },
-  { value: "umatan", label: "馬単", picks: 2, ordered: true, desc: "1-2着を着順通り" },
-  { value: "wide", label: "ワイド", picks: 2, ordered: false, desc: "3着以内の2頭" },
-  { value: "sanrenpuku", label: "三連複", picks: 3, ordered: false, desc: "1-3着の組合せ" },
-  { value: "sanrentan", label: "三連単", picks: 3, ordered: true, desc: "1-3着を着順通り" },
+  { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる", isWaku: false },
+  { value: "fukusho", label: "複勝", picks: 1, ordered: false, desc: "3着以内を当てる", isWaku: false },
+  { value: "wakuren", label: "枠連", picks: 2, ordered: false, desc: "1-2着の枠番組合せ", isWaku: true },
+  { value: "umaren", label: "馬連", picks: 2, ordered: false, desc: "1-2着の組合せ", isWaku: false },
+  { value: "umatan", label: "馬単", picks: 2, ordered: true, desc: "1-2着を着順通り", isWaku: false },
+  { value: "wide", label: "ワイド", picks: 2, ordered: false, desc: "3着以内の2頭", isWaku: false },
+  { value: "sanrenpuku", label: "三連複", picks: 3, ordered: false, desc: "1-3着の組合せ", isWaku: false },
+  { value: "sanrentan", label: "三連単", picks: 3, ordered: true, desc: "1-3着を着順通り", isWaku: false },
 ] as const;
 
 type BetTypeDef = (typeof BET_TYPES)[number];
@@ -43,6 +44,20 @@ const PICK_LABELS_ORDERED: Record<number, string[]> = {
 const PICK_LABELS_UNORDERED: Record<number, string[]> = {
   2: ["馬1", "馬2"],
   3: ["馬1", "馬2", "馬3"],
+};
+
+const PICK_LABELS_WAKU: string[] = ["枠1", "枠2"];
+
+// JRA bracket colors (1-8)
+const WAKU_COLORS: Record<number, { bg: string; text: string }> = {
+  1: { bg: "#FFFFFF", text: "#000" },
+  2: { bg: "#000000", text: "#FFF" },
+  3: { bg: "#FF0000", text: "#FFF" },
+  4: { bg: "#0000FF", text: "#FFF" },
+  5: { bg: "#FFFF00", text: "#000" },
+  6: { bg: "#00AA00", text: "#FFF" },
+  7: { bg: "#FF8C00", text: "#FFF" },
+  8: { bg: "#FF69B4", text: "#FFF" },
 };
 
 function calculatePayout(amount: number, odds: number): number {
@@ -113,11 +128,27 @@ export default function BettingSimulator({
     [entries],
   );
 
+  // Available bracket numbers for wakuren
+  const availableWakus = useMemo(() => {
+    const wakus = new Set<number>();
+    for (const e of entries) {
+      if (e.bracket_number != null) wakus.add(e.bracket_number);
+    }
+    return Array.from(wakus).sort((a, b) => a - b);
+  }, [entries]);
+
   const isAutoOdds = betType === "tansho";
   const autoOdds = useMemo(() => {
     if (!isAutoOdds || !selectedHorses[0]) return null;
-    const entry = entries.find((e) => e.horse.id === selectedHorses[0]);
-    return entry?.win_odds ?? null;
+    // Prefer entry with win_odds set (handles duplicate entries)
+    const withOdds = entries.find(
+      (e) => e.horse.id === selectedHorses[0] && e.win_odds !== null,
+    );
+    const raw = withOdds
+      ? withOdds.win_odds
+      : (entries.find((e) => e.horse.id === selectedHorses[0])?.win_odds ??
+        null);
+    return raw !== null ? Number(raw) : null;
   }, [isAutoOdds, selectedHorses, entries]);
 
   const effectiveOdds = isAutoOdds
@@ -136,6 +167,12 @@ export default function BettingSimulator({
       : null;
 
   function getHorseNames(): string {
+    if (currentType.isWaku) {
+      return selectedHorses
+        .filter(Boolean)
+        .map((w) => `${w}枠`)
+        .join(", ");
+    }
     return selectedHorses
       .map((hid) => entries.find((e) => e.horse.id === hid)?.horse.name ?? "")
       .filter(Boolean)
@@ -174,9 +211,11 @@ export default function BettingSimulator({
     }
   }
 
-  const pickLabels = currentType.ordered
-    ? PICK_LABELS_ORDERED[currentType.picks]
-    : PICK_LABELS_UNORDERED[currentType.picks];
+  const pickLabels = currentType.isWaku
+    ? PICK_LABELS_WAKU
+    : currentType.ordered
+      ? PICK_LABELS_ORDERED[currentType.picks]
+      : PICK_LABELS_UNORDERED[currentType.picks];
 
   // Current step indicator
   const currentStep = !allSelected ? 1 : effectiveOdds === null ? 2 : 3;
@@ -249,7 +288,7 @@ export default function BettingSimulator({
                 {
                   step: "1",
                   title: "馬券種・馬を選ぶ",
-                  desc: "7種の馬券種から選択し、馬をドロップダウンから指定",
+                  desc: "8種の馬券種から選択し、馬または枠をドロップダウンから指定",
                 },
                 {
                   step: "2",
@@ -439,7 +478,7 @@ export default function BettingSimulator({
                     className="ml-1 opacity-60"
                     style={{ fontSize: "10px" }}
                   >
-                    {t.picks}頭
+                    {t.isWaku ? `${t.picks}枠` : `${t.picks}頭`}
                   </span>
                 </button>
               ))}
@@ -471,43 +510,84 @@ export default function BettingSimulator({
                     className="mb-1 block text-xs font-medium"
                     style={{ color: "var(--text-secondary)" }}
                   >
-                    {currentType.picks === 1
-                      ? "馬選択"
-                      : (pickLabels?.[idx] ?? `馬${idx + 1}`)}
+                    {currentType.isWaku
+                      ? (pickLabels?.[idx] ?? `枠${idx + 1}`)
+                      : currentType.picks === 1
+                        ? "馬選択"
+                        : (pickLabels?.[idx] ?? `馬${idx + 1}`)}
                   </label>
-                  <select
-                    value={sel}
-                    onChange={(e) => handleHorseChange(idx, e.target.value)}
-                    className="w-full cursor-pointer rounded-lg px-3 py-2.5 text-sm transition-colors duration-200"
-                    style={{
-                      backgroundColor: "rgba(255,255,255,0.03)",
-                      border: sel
-                        ? "1px solid var(--accent)"
-                        : "1px solid var(--border)",
-                      color: "var(--text-primary)",
-                      boxShadow: sel
-                        ? "0 0 8px rgba(59,130,246,0.15)"
-                        : "none",
-                    }}
-                  >
-                    <option value="">選択してください</option>
-                    {sortedEntries
-                      .filter(
-                        (e) =>
-                          e.horse.id === sel ||
-                          !selectedHorses.some(
-                            (h, i) => i !== idx && h === e.horse.id,
-                          ),
-                      )
-                      .map((e, i) => (
-                        <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
-                          {e.post_position ?? "?"}. {e.horse.name}
-                          {e.win_odds !== null
-                            ? ` (${Number(e.win_odds).toFixed(1)}倍)`
-                            : ""}
-                        </option>
-                      ))}
-                  </select>
+                  {currentType.isWaku ? (
+                    <select
+                      value={sel}
+                      onChange={(e) => handleHorseChange(idx, e.target.value)}
+                      className="w-full cursor-pointer rounded-lg px-3 py-2.5 text-sm transition-colors duration-200"
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.03)",
+                        border: sel
+                          ? "1px solid var(--accent)"
+                          : "1px solid var(--border)",
+                        color: "var(--text-primary)",
+                        boxShadow: sel
+                          ? "0 0 8px rgba(59,130,246,0.15)"
+                          : "none",
+                      }}
+                    >
+                      <option value="">枠を選択</option>
+                      {availableWakus
+                        .filter(
+                          (w) =>
+                            String(w) === sel ||
+                            !selectedHorses.some(
+                              (h, i) => i !== idx && h === String(w),
+                            ),
+                        )
+                        .map((w) => {
+                          const horses = entries
+                            .filter((e) => e.bracket_number === w)
+                            .map((e) => e.horse.name)
+                            .join("・");
+                          return (
+                            <option key={w} value={String(w)}>
+                              {w}枠 ({horses})
+                            </option>
+                          );
+                        })}
+                    </select>
+                  ) : (
+                    <select
+                      value={sel}
+                      onChange={(e) => handleHorseChange(idx, e.target.value)}
+                      className="w-full cursor-pointer rounded-lg px-3 py-2.5 text-sm transition-colors duration-200"
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.03)",
+                        border: sel
+                          ? "1px solid var(--accent)"
+                          : "1px solid var(--border)",
+                        color: "var(--text-primary)",
+                        boxShadow: sel
+                          ? "0 0 8px rgba(59,130,246,0.15)"
+                          : "none",
+                      }}
+                    >
+                      <option value="">選択してください</option>
+                      {sortedEntries
+                        .filter(
+                          (e) =>
+                            e.horse.id === sel ||
+                            !selectedHorses.some(
+                              (h, i) => i !== idx && h === e.horse.id,
+                            ),
+                        )
+                        .map((e, i) => (
+                          <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
+                            {e.post_position ?? "?"}. {e.horse.name}
+                            {e.win_odds !== null
+                              ? ` (${Number(e.win_odds).toFixed(1)}倍)`
+                              : ""}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                 </div>
               ))}
             </div>
