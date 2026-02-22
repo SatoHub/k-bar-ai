@@ -33,10 +33,12 @@ type BetSlotState = {
   amount: number;
   fetchedOdds: number | null;
   oddsFetching: boolean;
+  oddsFetchFailed: boolean;
 };
 
 type Props = {
   raceId: string;
+  raceIdStr: string;
   raceDate: string;
   entries: RaceEntry[];
   sessionBets: SessionBet[];
@@ -77,6 +79,7 @@ function createSlot(betType = "tansho"): BetSlotState {
     amount: 100,
     fetchedOdds: null,
     oddsFetching: false,
+    oddsFetchFailed: false,
   };
 }
 
@@ -174,7 +177,7 @@ function BetSlotCard({
     if (slot.betType === "tansho") return;
 
     let cancelled = false;
-    onUpdate(slot.slotId, { oddsFetching: true, fetchedOdds: null });
+    onUpdate(slot.slotId, { oddsFetching: true, fetchedOdds: null, oddsFetchFailed: false });
 
     // Convert horse IDs to post_position / bracket numbers
     let selections: number[];
@@ -188,19 +191,23 @@ function BetSlotCard({
     }
 
     if (selections.length !== typeDef.picks) {
-      onUpdate(slot.slotId, { oddsFetching: false });
+      onUpdate(slot.slotId, { oddsFetching: false, oddsFetchFailed: true });
       return;
     }
 
     fetchComboOdds(raceId, slot.betType, selections)
       .then((res) => {
         if (!cancelled) {
-          onUpdate(slot.slotId, { fetchedOdds: res.odds, oddsFetching: false });
+          if (res.odds !== null) {
+            onUpdate(slot.slotId, { fetchedOdds: res.odds, oddsFetching: false, oddsFetchFailed: false });
+          } else {
+            onUpdate(slot.slotId, { oddsFetching: false, oddsFetchFailed: true });
+          }
         }
       })
       .catch(() => {
         if (!cancelled) {
-          onUpdate(slot.slotId, { oddsFetching: false });
+          onUpdate(slot.slotId, { oddsFetching: false, oddsFetchFailed: true });
         }
       });
 
@@ -229,6 +236,7 @@ function BetSlotCard({
       manualOdds: "",
       fetchedOdds: null,
       oddsFetching: false,
+      oddsFetchFailed: false,
     });
   }
 
@@ -434,6 +442,14 @@ function BetSlotCard({
                   自動
                 </span>
               )}
+              {!slot.oddsFetching && slot.oddsFetchFailed && effectiveOdds === null && !slot.manualOdds && (
+                <span
+                  className="ml-1 rounded-full px-1 py-0.5 text-[9px]"
+                  style={{ backgroundColor: "rgba(239,68,68,0.15)", color: "var(--red)" }}
+                >
+                  取得不可
+                </span>
+              )}
             </label>
             {/* Show fetched odds with manual override option */}
             {effectiveOdds !== null && !slot.manualOdds ? (
@@ -467,7 +483,7 @@ function BetSlotCard({
                 step={0.1}
                 value={slot.manualOdds}
                 onChange={(e) => onUpdate(slot.slotId, { manualOdds: e.target.value, fetchedOdds: null })}
-                placeholder={slot.oddsFetching ? "取得中..." : allHorsesSelected ? "馬選択後に自動取得" : "例: 12.5"}
+                placeholder={slot.oddsFetching ? "取得中..." : slot.oddsFetchFailed ? "オッズを入力" : allHorsesSelected ? "自動取得中..." : "例: 12.5"}
                 className="w-full rounded-lg px-2.5 py-2 text-sm tabular-nums"
                 style={{
                   backgroundColor: "rgba(255,255,255,0.03)",
@@ -516,6 +532,7 @@ function BetSlotCard({
 
 export default function BettingSimulator({
   raceId,
+  raceIdStr,
   raceDate,
   entries,
   sessionBets,
@@ -567,6 +584,7 @@ export default function BettingSimulator({
           amount: 100,
           fetchedOdds: null,
           oddsFetching: false,
+          oddsFetchFailed: false,
         },
       ];
     });
@@ -817,7 +835,7 @@ export default function BettingSimulator({
             slot={slot}
             index={index}
             total={slots.length}
-            raceId={raceId}
+            raceId={raceIdStr}
             entries={entries}
             sortedEntries={sortedEntries}
             availableWakus={availableWakus}

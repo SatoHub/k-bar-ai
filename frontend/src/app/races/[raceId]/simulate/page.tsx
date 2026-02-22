@@ -533,6 +533,7 @@ export default function SimulatePage({
         <div>
           <BettingSimulator
             raceId={race.id}
+            raceIdStr={race.race_id}
             raceDate={race.race_date}
             entries={race.entries}
             sessionBets={sessionBets}
