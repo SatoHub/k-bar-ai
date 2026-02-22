@@ -23,6 +23,15 @@ class BaseScraper:
             html = await scraper.fetch_page("https://...")
     """
 
+    _LAUNCH_ARGS = [
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-gpu",
+        "--single-process",
+        "--disable-extensions",
+        "--disable-background-networking",
+    ]
+
     def __init__(self, *, headless: bool = True) -> None:
         self._headless = headless
         self._pw = None
@@ -30,26 +39,37 @@ class BaseScraper:
 
     async def __aenter__(self) -> "BaseScraper":
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(
-            headless=self._headless,
-            args=[
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--single-process",
-                "--disable-extensions",
-                "--disable-background-networking",
-            ],
-        )
-        logger.info("Browser launched (headless=%s)", self._headless)
+        await self._launch_browser()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         if self._browser:
-            await self._browser.close()
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
         if self._pw:
             await self._pw.stop()
         logger.info("Browser closed")
+
+    async def _launch_browser(self) -> None:
+        """Launch (or re-launch) the browser."""
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+        self._browser = await self._pw.chromium.launch(
+            headless=self._headless,
+            args=self._LAUNCH_ARGS,
+        )
+        logger.info("Browser launched (headless=%s)", self._headless)
+
+    async def _ensure_browser(self) -> None:
+        """Re-launch browser if it has crashed."""
+        if not self._browser or not self._browser.is_connected():
+            logger.info("Browser disconnected, re-launching...")
+            await self._launch_browser()
 
     async def _wait(self) -> None:
         """Wait 3-10 seconds (random) between requests."""
@@ -63,8 +83,6 @@ class BaseScraper:
         Returns the page HTML content.
         Raises RuntimeError after max retries.
         """
-        assert self._browser is not None, "Use as async context manager"
-
         for attempt in range(_MAX_RETRIES):
             try:
                 if attempt > 0:
@@ -72,6 +90,7 @@ class BaseScraper:
                     logger.info("Retry %d, backoff %ds", attempt + 1, backoff)
                     await asyncio.sleep(backoff)
 
+                await self._ensure_browser()
                 page: Page = await self._browser.new_page()
                 try:
                     response = await page.goto(
@@ -87,7 +106,10 @@ class BaseScraper:
                     logger.info("Fetched %s (%d bytes)", url, len(html))
                     return html
                 finally:
-                    await page.close()
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
 
             except Exception as e:
                 if attempt == _MAX_RETRIES - 1:
@@ -103,14 +125,13 @@ class BaseScraper:
 
         Returns parsed JSON dict.
         """
-        assert self._browser is not None, "Use as async context manager"
-
         for attempt in range(_MAX_RETRIES):
             try:
                 if attempt > 0:
                     backoff = _BACKOFF[min(attempt, len(_BACKOFF) - 1)]
                     await asyncio.sleep(backoff)
 
+                await self._ensure_browser()
                 page: Page = await self._browser.new_page()
                 try:
                     response = await page.goto(
@@ -126,7 +147,10 @@ class BaseScraper:
 
                     return json.loads(text)
                 finally:
-                    await page.close()
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
 
             except Exception as e:
                 if attempt == _MAX_RETRIES - 1:
