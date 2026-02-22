@@ -298,9 +298,9 @@ function BetSlotCard({
                   onChange={(e) => handleHorseChange(idx, e.target.value)}
                   className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
                   style={{
-                    backgroundColor: "rgba(255,255,255,0.03)",
+                    backgroundColor: "#fff",
                     border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
-                    color: "var(--text-primary)",
+                    color: "#000",
                   }}
                 >
                   <option value="">枠を選択</option>
@@ -328,9 +328,9 @@ function BetSlotCard({
                   onChange={(e) => handleHorseChange(idx, e.target.value)}
                   className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
                   style={{
-                    backgroundColor: "rgba(255,255,255,0.03)",
+                    backgroundColor: "#fff",
                     border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
-                    color: "var(--text-primary)",
+                    color: "#000",
                   }}
                 >
                   <option value="">選択してください</option>
