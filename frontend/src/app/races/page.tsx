@@ -56,6 +56,18 @@ function RacesContent() {
     dataMaxMonth ||
     defaultYearMonth;
 
+  // Redirect to today's date on initial visit (no URL params)
+  const hasParams = searchParams.toString().length > 0;
+  useEffect(() => {
+    if (!hasParams) {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      router.replace(`/races?date=${yyyy}-${mm}-${dd}`);
+    }
+  }, [hasParams, router]);
+
   // Fetch racecourse list + data range once
   useEffect(() => {
     fetchDataStatus()
