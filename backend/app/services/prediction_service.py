@@ -74,9 +74,14 @@ async def get_race_predictions(
     result = await session.execute(
         select(PredictionLog)
         .where(PredictionLog.race_id == race.id)
-        .order_by(PredictionLog.predicted_score.desc())
+        .distinct(PredictionLog.race_id, PredictionLog.horse_id)
+        .order_by(PredictionLog.race_id, PredictionLog.horse_id, PredictionLog.predicted_score.desc())
     )
-    predictions = list(result.scalars().all())
+    predictions = sorted(
+        result.scalars().all(),
+        key=lambda p: p.predicted_score or 0,
+        reverse=True,
+    )
 
     if not predictions:
         return {

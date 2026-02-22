@@ -211,7 +211,17 @@ def _save_predictions(
 
         if rows:
             stmt = pg_insert(PredictionLog.__table__).values(rows)
-            stmt = stmt.on_conflict_do_nothing()
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["race_id", "horse_id", "model_version_id"],
+                set_={
+                    "predicted_position": stmt.excluded.predicted_position,
+                    "predicted_score": stmt.excluded.predicted_score,
+                    "explanation": stmt.excluded.explanation,
+                    "confidence": stmt.excluded.confidence,
+                    "shap_data": stmt.excluded.shap_data,
+                    "created_at": stmt.excluded.created_at,
+                },
+            )
             session.execute(stmt)
             session.commit()
             logger.info("Saved %d predictions to DB", len(rows))
