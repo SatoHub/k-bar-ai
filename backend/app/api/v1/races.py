@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.schemas.race import (
     AptitudeResponse,
+    ComboOddsRequest,
+    ComboOddsResponse,
     OddsHistoryResponse,
     OddsResponse,
     RaceDetail,
@@ -90,6 +92,46 @@ async def get_odds_hist(race_id: str, session: AsyncSession = Depends(get_sessio
     if result is None:
         raise HTTPException(status_code=404, detail="Race not found")
     return result
+
+
+@router.post("/{race_id}/odds/combo", response_model=ComboOddsResponse)
+async def get_combo_odds(
+    race_id: str,
+    body: ComboOddsRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Fetch real-time odds for a specific bet type and horse combination."""
+    from app.scraper.parsers.odds import NETKEIBA_ODDS_TYPE_MAP
+
+    if body.bet_type not in NETKEIBA_ODDS_TYPE_MAP:
+        raise HTTPException(status_code=400, detail=f"Unknown bet_type: {body.bet_type}")
+    if not body.selections:
+        raise HTTPException(status_code=400, detail="selections must not be empty")
+
+    # Resolve race_id string to DB race_id for validation
+    from app.models import Race
+    from sqlalchemy import select
+
+    result = await session.execute(select(Race).where(Race.race_id == race_id))
+    race = result.scalar_one_or_none()
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    # Fetch odds from netkeiba (lightweight: uses browser JSON fetch, no full page)
+    from app.scraper.netkeiba import NetkeibaScraper
+
+    try:
+        async with NetkeibaScraper(headless=True) as nk:
+            odds = await nk.scrape_combo_odds(race_id, body.bet_type, body.selections)
+    except Exception:
+        odds = None
+
+    return ComboOddsResponse(
+        race_id=race_id,
+        bet_type=body.bet_type,
+        selections=body.selections,
+        odds=odds,
+    )
 
 
 @router.get("/{race_id}/aptitude", response_model=AptitudeResponse)

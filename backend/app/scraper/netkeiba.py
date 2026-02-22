@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 
 from app.scraper.base import BaseScraper
-from app.scraper.parsers.odds import parse_odds_json
+from app.scraper.parsers.odds import (
+    NETKEIBA_ODDS_TYPE_MAP,
+    parse_combo_odds,
+    parse_odds_json,
+)
 from app.scraper.parsers.race_list import parse_race_list
 from app.scraper.parsers.result import parse_result
 from app.scraper.parsers.shutuba import parse_shutuba
@@ -18,6 +22,10 @@ _SHUTUBA_URL = "https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
 _ODDS_API_URL = (
     "https://race.netkeiba.com/api/api_get_jra_odds.html"
     "?race_id={race_id}&type=1&action=update"
+)
+_ODDS_API_URL_TYPED = (
+    "https://race.netkeiba.com/api/api_get_jra_odds.html"
+    "?race_id={race_id}&type={odds_type}&action=update"
 )
 _RESULT_URL = "https://race.netkeiba.com/race/result.html?race_id={race_id}"
 
@@ -74,6 +82,33 @@ class NetkeibaScraper:
         data = await self._base.fetch_json(url)
         odds = parse_odds_json(data, race_id)
         logger.info("Odds %s: %d entries", race_id, len(odds))
+        return odds
+
+    async def scrape_combo_odds(
+        self, race_id: str, bet_type: str, selections: list[int]
+    ) -> float | None:
+        """Scrape odds for a specific bet type and horse combination.
+
+        Args:
+            race_id: Race identifier (e.g. "202605010811").
+            bet_type: One of tansho, fukusho, wakuren, umaren, umatan, wide, sanrenpuku, sanrentan.
+            selections: Horse numbers (post_position) or bracket numbers.
+
+        Returns:
+            Odds value as float, or None if unavailable.
+        """
+        type_info = NETKEIBA_ODDS_TYPE_MAP.get(bet_type)
+        if not type_info:
+            return None
+        url = _ODDS_API_URL_TYPED.format(
+            race_id=race_id, odds_type=type_info["api_type"]
+        )
+        await self._base._wait()
+        data = await self._base.fetch_json(url)
+        odds = parse_combo_odds(data, bet_type, selections)
+        logger.info(
+            "ComboOdds %s %s %s: %s", race_id, bet_type, selections, odds
+        )
         return odds
 
     async def scrape_result(self, race_id: str) -> dict:

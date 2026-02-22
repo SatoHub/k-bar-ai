@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { createBet, type RaceEntry, type BetRecord } from "@/lib/api";
+import { createBet, fetchComboOdds, type RaceEntry, type BetRecord } from "@/lib/api";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる", isWaku: false },
@@ -31,6 +31,8 @@ type BetSlotState = {
   selectedHorses: string[];
   manualOdds: string;
   amount: number;
+  fetchedOdds: number | null;
+  oddsFetching: boolean;
 };
 
 type Props = {
@@ -73,6 +75,8 @@ function createSlot(betType = "tansho"): BetSlotState {
     selectedHorses: Array(typeDef.picks).fill(""),
     manualOdds: "",
     amount: 100,
+    fetchedOdds: null,
+    oddsFetching: false,
   };
 }
 
@@ -88,7 +92,11 @@ function getSlotOdds(
   slot: BetSlotState,
   entries: RaceEntry[],
 ): number | null {
-  const typeDef = getTypeDef(slot.betType);
+  // Manual override takes priority
+  if (slot.manualOdds) return parseFloat(slot.manualOdds);
+  // Fetched odds (from API)
+  if (slot.fetchedOdds !== null) return slot.fetchedOdds;
+  // Tansho fallback: use entry win_odds
   if (slot.betType === "tansho" && slot.selectedHorses[0]) {
     const withOdds = entries.find(
       (e) => e.horse.id === slot.selectedHorses[0] && e.win_odds !== null,
@@ -98,7 +106,7 @@ function getSlotOdds(
       : (entries.find((e) => e.horse.id === slot.selectedHorses[0])?.win_odds ?? null);
     return raw !== null ? Number(raw) : null;
   }
-  return slot.manualOdds ? parseFloat(slot.manualOdds) : null;
+  return null;
 }
 
 function isSlotComplete(slot: BetSlotState): boolean {
@@ -133,6 +141,7 @@ function BetSlotCard({
   slot,
   index,
   total,
+  raceId,
   entries,
   sortedEntries,
   availableWakus,
@@ -142,6 +151,7 @@ function BetSlotCard({
   slot: BetSlotState;
   index: number;
   total: number;
+  raceId: string;
   entries: RaceEntry[];
   sortedEntries: RaceEntry[];
   availableWakus: number[];
@@ -149,8 +159,54 @@ function BetSlotCard({
   onRemove: (slotId: string) => void;
 }) {
   const typeDef = getTypeDef(slot.betType);
-  const isAutoOdds = slot.betType === "tansho";
   const effectiveOdds = getSlotOdds(slot, entries);
+
+  // Auto-fetch odds when all horses are selected
+  const allHorsesSelected =
+    slot.selectedHorses.length === typeDef.picks &&
+    slot.selectedHorses.every((h) => h !== "");
+  const selectionsKey = slot.selectedHorses.join(",");
+
+  useEffect(() => {
+    if (!allHorsesSelected || slot.manualOdds) return;
+
+    // For tansho, we already have odds from entry data
+    if (slot.betType === "tansho") return;
+
+    let cancelled = false;
+    onUpdate(slot.slotId, { oddsFetching: true, fetchedOdds: null });
+
+    // Convert horse IDs to post_position / bracket numbers
+    let selections: number[];
+    if (typeDef.isWaku) {
+      selections = slot.selectedHorses.map(Number);
+    } else {
+      selections = slot.selectedHorses.map((hid) => {
+        const entry = entries.find((e) => e.horse.id === hid);
+        return entry?.post_position ?? 0;
+      }).filter((n) => n > 0);
+    }
+
+    if (selections.length !== typeDef.picks) {
+      onUpdate(slot.slotId, { oddsFetching: false });
+      return;
+    }
+
+    fetchComboOdds(raceId, slot.betType, selections)
+      .then((res) => {
+        if (!cancelled) {
+          onUpdate(slot.slotId, { fetchedOdds: res.odds, oddsFetching: false });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          onUpdate(slot.slotId, { oddsFetching: false });
+        }
+      });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slot.betType, selectionsKey, allHorsesSelected]);
   const allSelected =
     slot.selectedHorses.length === typeDef.picks &&
     slot.selectedHorses.every((h) => h !== "");
@@ -171,6 +227,8 @@ function BetSlotCard({
       betType: value,
       selectedHorses: Array(newType.picks).fill(""),
       manualOdds: "",
+      fetchedOdds: null,
+      oddsFetching: false,
     });
   }
 
@@ -360,25 +418,47 @@ function BetSlotCard({
               style={{ color: "var(--text-muted)" }}
             >
               オッズ
-              {isAutoOdds && (
+              {slot.oddsFetching && (
                 <span
                   className="ml-1 rounded-full px-1 py-0.5 text-[9px]"
                   style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--accent)" }}
+                >
+                  取得中...
+                </span>
+              )}
+              {!slot.oddsFetching && effectiveOdds !== null && !slot.manualOdds && (
+                <span
+                  className="ml-1 rounded-full px-1 py-0.5 text-[9px]"
+                  style={{ backgroundColor: "rgba(34,197,94,0.15)", color: "var(--green)" }}
                 >
                   自動
                 </span>
               )}
             </label>
-            {isAutoOdds ? (
+            {/* Show fetched odds with manual override option */}
+            {effectiveOdds !== null && !slot.manualOdds ? (
               <div
-                className="rounded-lg px-2.5 py-2 text-sm font-semibold tabular-nums"
-                style={{
-                  backgroundColor: "rgba(255,255,255,0.03)",
-                  border: "1px solid var(--border)",
-                  color: effectiveOdds !== null ? "var(--text-primary)" : "var(--text-muted)",
-                }}
+                className="flex items-center gap-1"
               >
-                {effectiveOdds !== null ? `${effectiveOdds.toFixed(1)} 倍` : "---"}
+                <div
+                  className="flex-1 rounded-lg px-2.5 py-2 text-sm font-semibold tabular-nums"
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.03)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {effectiveOdds.toFixed(1)} 倍
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdate(slot.slotId, { manualOdds: String(effectiveOdds.toFixed(1)) })}
+                  className="cursor-pointer rounded px-1.5 py-2 text-[9px] transition-colors"
+                  style={{ color: "var(--text-muted)" }}
+                  title="手動で上書き"
+                >
+                  編集
+                </button>
               </div>
             ) : (
               <input
@@ -386,8 +466,8 @@ function BetSlotCard({
                 min={1}
                 step={0.1}
                 value={slot.manualOdds}
-                onChange={(e) => onUpdate(slot.slotId, { manualOdds: e.target.value })}
-                placeholder="例: 12.5"
+                onChange={(e) => onUpdate(slot.slotId, { manualOdds: e.target.value, fetchedOdds: null })}
+                placeholder={slot.oddsFetching ? "取得中..." : allHorsesSelected ? "馬選択後に自動取得" : "例: 12.5"}
                 className="w-full rounded-lg px-2.5 py-2 text-sm tabular-nums"
                 style={{
                   backgroundColor: "rgba(255,255,255,0.03)",
@@ -485,6 +565,8 @@ export default function BettingSimulator({
           selectedHorses: adjusted,
           manualOdds: "",
           amount: 100,
+          fetchedOdds: null,
+          oddsFetching: false,
         },
       ];
     });
@@ -735,6 +817,7 @@ export default function BettingSimulator({
             slot={slot}
             index={index}
             total={slots.length}
+            raceId={raceId}
             entries={entries}
             sortedEntries={sortedEntries}
             availableWakus={availableWakus}

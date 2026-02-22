@@ -402,6 +402,25 @@ export function fetchOddsHistory(raceId: string): Promise<OddsHistoryResponse> {
   return fetchJSON<OddsHistoryResponse>(`/races/${raceId}/odds/history`);
 }
 
+// Combo odds lookup
+export type ComboOddsResponse = {
+  race_id: string;
+  bet_type: string;
+  selections: number[];
+  odds: number | null;
+};
+
+export function fetchComboOdds(
+  raceId: string,
+  betType: string,
+  selections: number[],
+): Promise<ComboOddsResponse> {
+  return postJSON<ComboOddsResponse>(`/races/${raceId}/odds/combo`, {
+    bet_type: betType,
+    selections,
+  });
+}
+
 // Horse detail
 export function fetchHorseDetail(horseId: string): Promise<HorseDetail> {
   return fetchJSON<HorseDetail>(`/horses/${horseId}`);

@@ -124,6 +124,21 @@ class OddsHistoryResponse(BaseModel):
     history: list[OddsHistoryPoint] = []
 
 
+# --- Combo odds schemas ---
+
+
+class ComboOddsRequest(BaseModel):
+    bet_type: str
+    selections: list[int]
+
+
+class ComboOddsResponse(BaseModel):
+    race_id: str
+    bet_type: str
+    selections: list[int]
+    odds: float | None = None
+
+
 # --- Aptitude schemas ---
 
 
