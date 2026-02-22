@@ -178,7 +178,7 @@ export default function ResultsPage() {
         AI予想成績
       </h1>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr] min-w-0">
         {/* Left: Calendar + Summary */}
         <div className="space-y-4">
           {/* Calendar */}
@@ -374,7 +374,7 @@ export default function ResultsPage() {
         </div>
 
         {/* Right: Results */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           {/* Racecourse tabs */}
           {selectedDate && racecourses.length > 0 && (
             <div className="flex gap-1 flex-wrap">

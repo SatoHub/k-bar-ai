@@ -162,12 +162,12 @@ export default function BetsPage() {
                   <th className="px-3 py-2">日付</th>
                   <th className="px-3 py-2">レース</th>
                   <th className="px-3 py-2">馬券種</th>
-                  <th className="px-3 py-2">馬名</th>
+                  <th className="hidden sm:table-cell px-3 py-2">馬名</th>
                   <th className="px-3 py-2 text-right">掛け金</th>
-                  <th className="px-3 py-2 text-right">オッズ</th>
-                  <th className="px-3 py-2 text-right">払戻</th>
+                  <th className="hidden sm:table-cell px-3 py-2 text-right">オッズ</th>
+                  <th className="hidden sm:table-cell px-3 py-2 text-right">払戻</th>
                   <th className="px-3 py-2 text-center">的中</th>
-                  <th className="px-3 py-2">レース結果</th>
+                  <th className="hidden lg:table-cell px-3 py-2">レース結果</th>
                   <th className="px-3 py-2">操作</th>
                 </tr>
               </thead>
@@ -227,7 +227,7 @@ export default function BetsPage() {
 
                       {/* 馬名 */}
                       <td
-                        className="px-3 py-2 font-medium"
+                        className="hidden sm:table-cell px-3 py-2 font-medium"
                         style={{ color: "var(--text-primary)" }}
                       >
                         {bet.horse_names}
@@ -239,14 +239,14 @@ export default function BetsPage() {
                       </td>
 
                       {/* オッズ */}
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <td className="hidden sm:table-cell px-3 py-2 text-right tabular-nums">
                         {bet.odds_at_bet !== null
                           ? Number(bet.odds_at_bet).toFixed(1)
                           : "---"}
                       </td>
 
                       {/* 払戻 */}
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <td className="hidden sm:table-cell px-3 py-2 text-right tabular-nums">
                         {isEditing ? (
                           <input
                             type="number"
@@ -284,7 +284,7 @@ export default function BetsPage() {
                       </td>
 
                       {/* レース結果 (上位3着) */}
-                      <td className="px-3 py-2">
+                      <td className="hidden lg:table-cell px-3 py-2">
                         {ri && ri.result_top3.length > 0 ? (
                           <div className="flex flex-col gap-0.5">
                             {ri.result_top3.map((r) => (
