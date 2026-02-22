@@ -336,7 +336,7 @@ export default function ResultsPage() {
               >
                 {calYear}年{calMonth}月 AI的中率
               </div>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {BET_TYPE_ORDER.map((key) => {
                   const hr = summary.hit_rates[key];
                   if (!hr) return null;
@@ -469,45 +469,29 @@ export default function ResultsPage() {
                 この日に確定済みレースはありません
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm whitespace-nowrap">
-                  <thead>
-                    <tr
-                      className="text-left text-xs font-medium"
-                      style={{
-                        backgroundColor: "var(--bg-elevated)",
-                        color: "var(--text-secondary)",
-                      }}
+              <>
+                {/* Mobile: card layout */}
+                <div className="md:hidden">
+                  {items.map((item) => (
+                    <div
+                      key={item.race_id_str}
+                      className="px-3 py-3"
+                      style={{ borderBottom: "1px solid var(--border)" }}
                     >
-                      <th className="px-3 py-2">R</th>
-                      <th className="px-3 py-2">レース</th>
-                      <th className="px-3 py-2">結果 TOP3</th>
-                      <th className="px-3 py-2">AI予想 TOP3</th>
-                      <th className="px-3 py-2 text-center">的中</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr
-                        key={item.race_id_str}
-                        style={{ borderBottom: "1px solid var(--border)" }}
-                      >
-                        {/* レース番号 */}
-                        <td
-                          className="px-3 py-2 font-medium tabular-nums"
-                          style={{ color: "var(--text-secondary)" }}
-                        >
-                          {item.race_number ?? "-"}
-                        </td>
-
-                        {/* レース情報 */}
-                        <td className="px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
                           <Link
                             href={`/races/${item.race_id_str}`}
                             className="hover:underline"
                             style={{ color: "var(--accent)" }}
                           >
-                            <span className="font-medium">
+                            <span
+                              className="font-medium tabular-nums"
+                              style={{ color: "var(--text-secondary)" }}
+                            >
+                              {item.race_number ?? "-"}R
+                            </span>
+                            <span className="ml-1 font-medium">
                               {item.racecourse_name ?? ""}
                             </span>
                             {item.race_name && (
@@ -524,45 +508,53 @@ export default function ResultsPage() {
                               className="text-xs"
                               style={{ color: "var(--text-muted)" }}
                             >
-                              {item.surface}
-                              {item.distance_m}m
+                              {item.surface}{item.distance_m}m
                             </div>
                           )}
-                        </td>
+                        </div>
+                        <div className="shrink-0">
+                          {item.ai_prediction ? (
+                            <HitBadges ai={item.ai_prediction} />
+                          ) : (
+                            <span
+                              className="text-xs"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              ---
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
+                      <div className="mt-2 grid grid-cols-2 gap-2">
                         {/* 結果 TOP3 */}
-                        <td className="px-3 py-2">
+                        <div>
+                          <div
+                            className="mb-0.5 text-[10px] font-medium"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            結果
+                          </div>
                           {item.result_top3.length > 0 ? (
                             <div className="flex flex-col gap-0.5">
                               {item.result_top3.map((r) => (
                                 <span
                                   key={r.finish_position}
-                                  className="text-xs"
+                                  className="text-xs truncate"
                                   style={{ color: "var(--text-secondary)" }}
                                 >
                                   <span
-                                    className="inline-block w-7 text-right font-medium tabular-nums mr-1"
+                                    className="font-medium tabular-nums mr-0.5"
                                     style={{
                                       color:
                                         r.finish_position === 1
                                           ? "var(--yellow)"
-                                          : r.finish_position === 2
-                                            ? "var(--text-secondary)"
-                                            : "var(--text-muted)",
+                                          : "var(--text-muted)",
                                     }}
                                   >
-                                    {POSITION_MARKS[r.finish_position] ??
-                                      `${r.finish_position}着`}
+                                    {r.finish_position}.
                                   </span>
                                   {r.horse_name}
-                                  {r.win_odds != null && (
-                                    <span
-                                      className="ml-1"
-                                      style={{ color: "var(--text-muted)" }}
-                                    >
-                                      ({r.win_odds.toFixed(1)})
-                                    </span>
-                                  )}
                                 </span>
                               ))}
                             </div>
@@ -574,20 +566,26 @@ export default function ResultsPage() {
                               ---
                             </span>
                           )}
-                        </td>
+                        </div>
 
                         {/* AI予想 TOP3 */}
-                        <td className="px-3 py-2">
+                        <div>
+                          <div
+                            className="mb-0.5 text-[10px] font-medium"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            AI予想
+                          </div>
                           {item.ai_prediction ? (
                             <div className="flex flex-col gap-0.5">
                               {item.ai_prediction.predicted_top3.map((p) => (
                                 <span
                                   key={p.rank}
-                                  className="text-xs"
+                                  className="text-xs truncate"
                                   style={{ color: "var(--text-secondary)" }}
                                 >
                                   <span
-                                    className="inline-block w-4 text-right font-medium tabular-nums mr-1"
+                                    className="font-medium tabular-nums mr-0.5"
                                     style={{ color: "var(--text-muted)" }}
                                   >
                                     {p.rank}.
@@ -604,26 +602,159 @@ export default function ResultsPage() {
                               予想なし
                             </span>
                           )}
-                        </td>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-                        {/* 的中マーク */}
-                        <td className="px-3 py-2 text-center">
-                          {item.ai_prediction ? (
-                            <HitBadges ai={item.ai_prediction} />
-                          ) : (
-                            <span
-                              className="text-xs"
-                              style={{ color: "var(--text-muted)" }}
-                            >
-                              ---
-                            </span>
-                          )}
-                        </td>
+                {/* Desktop: table layout */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-sm whitespace-nowrap">
+                    <thead>
+                      <tr
+                        className="text-left text-xs font-medium"
+                        style={{
+                          backgroundColor: "var(--bg-elevated)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        <th className="px-3 py-2">R</th>
+                        <th className="px-3 py-2">レース</th>
+                        <th className="px-3 py-2">結果 TOP3</th>
+                        <th className="px-3 py-2">AI予想 TOP3</th>
+                        <th className="px-3 py-2 text-center">的中</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => (
+                        <tr
+                          key={item.race_id_str}
+                          style={{ borderBottom: "1px solid var(--border)" }}
+                        >
+                          <td
+                            className="px-3 py-2 font-medium tabular-nums"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            {item.race_number ?? "-"}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Link
+                              href={`/races/${item.race_id_str}`}
+                              className="hover:underline"
+                              style={{ color: "var(--accent)" }}
+                            >
+                              <span className="font-medium">
+                                {item.racecourse_name ?? ""}
+                              </span>
+                              {item.race_name && (
+                                <span
+                                  className="ml-1 text-xs"
+                                  style={{ color: "var(--text-muted)" }}
+                                >
+                                  {item.race_name}
+                                </span>
+                              )}
+                            </Link>
+                            {item.surface && item.distance_m && (
+                              <div
+                                className="text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                {item.surface}{item.distance_m}m
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {item.result_top3.length > 0 ? (
+                              <div className="flex flex-col gap-0.5">
+                                {item.result_top3.map((r) => (
+                                  <span
+                                    key={r.finish_position}
+                                    className="text-xs"
+                                    style={{ color: "var(--text-secondary)" }}
+                                  >
+                                    <span
+                                      className="inline-block w-7 text-right font-medium tabular-nums mr-1"
+                                      style={{
+                                        color:
+                                          r.finish_position === 1
+                                            ? "var(--yellow)"
+                                            : r.finish_position === 2
+                                              ? "var(--text-secondary)"
+                                              : "var(--text-muted)",
+                                      }}
+                                    >
+                                      {POSITION_MARKS[r.finish_position] ??
+                                        `${r.finish_position}着`}
+                                    </span>
+                                    {r.horse_name}
+                                    {r.win_odds != null && (
+                                      <span
+                                        className="ml-1"
+                                        style={{ color: "var(--text-muted)" }}
+                                      >
+                                        ({r.win_odds.toFixed(1)})
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span
+                                className="text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                ---
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {item.ai_prediction ? (
+                              <div className="flex flex-col gap-0.5">
+                                {item.ai_prediction.predicted_top3.map((p) => (
+                                  <span
+                                    key={p.rank}
+                                    className="text-xs"
+                                    style={{ color: "var(--text-secondary)" }}
+                                  >
+                                    <span
+                                      className="inline-block w-4 text-right font-medium tabular-nums mr-1"
+                                      style={{ color: "var(--text-muted)" }}
+                                    >
+                                      {p.rank}.
+                                    </span>
+                                    {p.horse_name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span
+                                className="text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                予想なし
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {item.ai_prediction ? (
+                              <HitBadges ai={item.ai_prediction} />
+                            ) : (
+                              <span
+                                className="text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                ---
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>
