@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AiHitRateCard from "@/components/AiHitRateCard";
 import BetSummaryCard from "@/components/BetSummaryCard";
 import DataStatusCard from "@/components/DataStatusCard";
 import ModelMetricsCard from "@/components/ModelMetricsCard";
@@ -179,6 +180,9 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
+
+      {/* AI hit rate summary */}
+      <AiHitRateCard />
 
       {/* Scheduler status */}
       <SchedulerStatus />
