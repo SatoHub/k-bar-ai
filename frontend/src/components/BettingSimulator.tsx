@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { createBet, type RaceEntry, type BetRecord } from "@/lib/api";
 
 const BET_TYPES = [
@@ -23,6 +23,14 @@ type SessionBet = {
   amount: number;
   odds: number | null;
   payout: number | null;
+};
+
+type BetSlotState = {
+  slotId: string;
+  betType: string;
+  selectedHorses: string[];
+  manualOdds: string;
+  amount: number;
 };
 
 type Props = {
@@ -48,23 +56,383 @@ const PICK_LABELS_UNORDERED: Record<number, string[]> = {
 
 const PICK_LABELS_WAKU: string[] = ["枠1", "枠2"];
 
-// JRA bracket colors (1-8)
-const WAKU_COLORS: Record<number, { bg: string; text: string }> = {
-  1: { bg: "#FFFFFF", text: "#000" },
-  2: { bg: "#000000", text: "#FFF" },
-  3: { bg: "#FF0000", text: "#FFF" },
-  4: { bg: "#0000FF", text: "#FFF" },
-  5: { bg: "#FFFF00", text: "#000" },
-  6: { bg: "#00AA00", text: "#FFF" },
-  7: { bg: "#FF8C00", text: "#FFF" },
-  8: { bg: "#FF69B4", text: "#FFF" },
-};
-
 function calculatePayout(amount: number, odds: number): number {
   return Math.floor((amount * odds) / 100) * 100;
 }
 
+let slotCounter = 0;
+function newSlotId(): string {
+  return `slot-${++slotCounter}-${Date.now()}`;
+}
+
+function createSlot(betType = "tansho"): BetSlotState {
+  const typeDef = BET_TYPES.find((t) => t.value === betType) ?? BET_TYPES[0];
+  return {
+    slotId: newSlotId(),
+    betType,
+    selectedHorses: Array(typeDef.picks).fill(""),
+    manualOdds: "",
+    amount: 100,
+  };
+}
+
 export type { SessionBet };
+
+/* ─── Per-slot helper functions ─── */
+
+function getTypeDef(betType: string): BetTypeDef {
+  return BET_TYPES.find((t) => t.value === betType) ?? BET_TYPES[0];
+}
+
+function getSlotOdds(
+  slot: BetSlotState,
+  entries: RaceEntry[],
+): number | null {
+  const typeDef = getTypeDef(slot.betType);
+  if (slot.betType === "tansho" && slot.selectedHorses[0]) {
+    const withOdds = entries.find(
+      (e) => e.horse.id === slot.selectedHorses[0] && e.win_odds !== null,
+    );
+    const raw = withOdds
+      ? withOdds.win_odds
+      : (entries.find((e) => e.horse.id === slot.selectedHorses[0])?.win_odds ?? null);
+    return raw !== null ? Number(raw) : null;
+  }
+  return slot.manualOdds ? parseFloat(slot.manualOdds) : null;
+}
+
+function isSlotComplete(slot: BetSlotState): boolean {
+  const typeDef = getTypeDef(slot.betType);
+  return (
+    slot.selectedHorses.length === typeDef.picks &&
+    slot.selectedHorses.every((h) => h !== "") &&
+    slot.amount > 0
+  );
+}
+
+function getHorseNamesForSlot(
+  slot: BetSlotState,
+  entries: RaceEntry[],
+): string {
+  const typeDef = getTypeDef(slot.betType);
+  if (typeDef.isWaku) {
+    return slot.selectedHorses
+      .filter(Boolean)
+      .map((w) => `${w}枠`)
+      .join(", ");
+  }
+  return slot.selectedHorses
+    .map((hid) => entries.find((e) => e.horse.id === hid)?.horse.name ?? "")
+    .filter(Boolean)
+    .join(", ");
+}
+
+/* ─── Single Bet Slot Card ─── */
+
+function BetSlotCard({
+  slot,
+  index,
+  total,
+  entries,
+  sortedEntries,
+  availableWakus,
+  onUpdate,
+  onRemove,
+}: {
+  slot: BetSlotState;
+  index: number;
+  total: number;
+  entries: RaceEntry[];
+  sortedEntries: RaceEntry[];
+  availableWakus: number[];
+  onUpdate: (slotId: string, patch: Partial<BetSlotState>) => void;
+  onRemove: (slotId: string) => void;
+}) {
+  const typeDef = getTypeDef(slot.betType);
+  const isAutoOdds = slot.betType === "tansho";
+  const effectiveOdds = getSlotOdds(slot, entries);
+  const allSelected =
+    slot.selectedHorses.length === typeDef.picks &&
+    slot.selectedHorses.every((h) => h !== "");
+  const estimatedPayout =
+    effectiveOdds !== null && effectiveOdds > 0 && slot.amount > 0
+      ? calculatePayout(slot.amount, effectiveOdds)
+      : null;
+
+  const pickLabels = typeDef.isWaku
+    ? PICK_LABELS_WAKU
+    : typeDef.ordered
+      ? PICK_LABELS_ORDERED[typeDef.picks]
+      : PICK_LABELS_UNORDERED[typeDef.picks];
+
+  function handleBetTypeChange(value: string) {
+    const newType = BET_TYPES.find((t) => t.value === value) ?? BET_TYPES[0];
+    onUpdate(slot.slotId, {
+      betType: value,
+      selectedHorses: Array(newType.picks).fill(""),
+      manualOdds: "",
+    });
+  }
+
+  function handleHorseChange(idx: number, horseId: string) {
+    const next = [...slot.selectedHorses];
+    next[idx] = horseId;
+    onUpdate(slot.slotId, { selectedHorses: next });
+  }
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl"
+      style={{
+        backgroundColor: "var(--bg-elevated)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      {/* Card Header */}
+      <div
+        className="flex items-center justify-between px-4 py-2.5"
+        style={{
+          borderBottom: "1px solid var(--border)",
+          background:
+            "linear-gradient(135deg, rgba(59,130,246,0.06), rgba(139,92,246,0.06))",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <div
+            className="flex h-6 w-6 items-center justify-center rounded-lg text-xs font-bold"
+            style={{
+              background: "linear-gradient(135deg, var(--accent), #8B5CF6)",
+              color: "#fff",
+            }}
+          >
+            {index + 1}
+          </div>
+          <span
+            className="text-xs font-semibold"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {typeDef.label}
+          </span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {typeDef.desc}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Payout badge */}
+          {estimatedPayout !== null && (
+            <span
+              className="rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums"
+              style={{
+                backgroundColor: "rgba(34,197,94,0.15)",
+                color: "var(--green)",
+              }}
+            >
+              ¥{estimatedPayout.toLocaleString()}
+            </span>
+          )}
+          {total > 1 && (
+            <button
+              type="button"
+              onClick={() => onRemove(slot.slotId)}
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sm transition-colors duration-150"
+              style={{ color: "var(--text-muted)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--red)";
+                e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-muted)";
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
+              title="この馬券を削除"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Bet type pills */}
+        <div className="flex flex-wrap gap-1">
+          {BET_TYPES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => handleBetTypeChange(t.value)}
+              className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-all duration-200"
+              style={{
+                backgroundColor:
+                  slot.betType === t.value
+                    ? "var(--accent)"
+                    : "rgba(255,255,255,0.05)",
+                color: slot.betType === t.value ? "#fff" : "var(--text-muted)",
+                border:
+                  slot.betType === t.value
+                    ? "1px solid var(--accent)"
+                    : "1px solid transparent",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Horse / Waku selection */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {slot.selectedHorses.map((sel, idx) => (
+            <div key={idx}>
+              <label
+                className="mb-0.5 block text-[10px] font-medium"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {typeDef.isWaku
+                  ? (pickLabels?.[idx] ?? `枠${idx + 1}`)
+                  : typeDef.picks === 1
+                    ? "馬選択"
+                    : (pickLabels?.[idx] ?? `馬${idx + 1}`)}
+              </label>
+              {typeDef.isWaku ? (
+                <select
+                  value={sel}
+                  onChange={(e) => handleHorseChange(idx, e.target.value)}
+                  className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.03)",
+                    border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  <option value="">枠を選択</option>
+                  {availableWakus
+                    .filter(
+                      (w) =>
+                        String(w) === sel ||
+                        !slot.selectedHorses.some((h, i) => i !== idx && h === String(w)),
+                    )
+                    .map((w) => {
+                      const horses = entries
+                        .filter((e) => e.bracket_number === w)
+                        .map((e) => e.horse.name)
+                        .join("・");
+                      return (
+                        <option key={w} value={String(w)}>
+                          {w}枠 ({horses})
+                        </option>
+                      );
+                    })}
+                </select>
+              ) : (
+                <select
+                  value={sel}
+                  onChange={(e) => handleHorseChange(idx, e.target.value)}
+                  className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.03)",
+                    border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  <option value="">選択してください</option>
+                  {sortedEntries
+                    .filter(
+                      (e) =>
+                        e.horse.id === sel ||
+                        !slot.selectedHorses.some((h, i) => i !== idx && h === e.horse.id),
+                    )
+                    .map((e, i) => (
+                      <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
+                        {e.post_position ?? "?"}. {e.horse.name}
+                        {e.win_odds !== null ? ` (${Number(e.win_odds).toFixed(1)}倍)` : ""}
+                      </option>
+                    ))}
+                </select>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Odds & Amount row */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label
+              className="mb-0.5 block text-[10px] font-medium"
+              style={{ color: "var(--text-muted)" }}
+            >
+              オッズ
+              {isAutoOdds && (
+                <span
+                  className="ml-1 rounded-full px-1 py-0.5 text-[9px]"
+                  style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--accent)" }}
+                >
+                  自動
+                </span>
+              )}
+            </label>
+            {isAutoOdds ? (
+              <div
+                className="rounded-lg px-2.5 py-2 text-sm font-semibold tabular-nums"
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  color: effectiveOdds !== null ? "var(--text-primary)" : "var(--text-muted)",
+                }}
+              >
+                {effectiveOdds !== null ? `${effectiveOdds.toFixed(1)} 倍` : "---"}
+              </div>
+            ) : (
+              <input
+                type="number"
+                min={1}
+                step={0.1}
+                value={slot.manualOdds}
+                onChange={(e) => onUpdate(slot.slotId, { manualOdds: e.target.value })}
+                placeholder="例: 12.5"
+                className="w-full rounded-lg px-2.5 py-2 text-sm tabular-nums"
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-primary)",
+                }}
+              />
+            )}
+          </div>
+          <div>
+            <label
+              className="mb-0.5 block text-[10px] font-medium"
+              style={{ color: "var(--text-muted)" }}
+            >
+              掛け金
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min={100}
+                step={100}
+                value={slot.amount}
+                onChange={(e) => onUpdate(slot.slotId, { amount: Number(e.target.value) })}
+                className="w-full rounded-lg px-2.5 py-2 pr-7 text-sm tabular-nums"
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-primary)",
+                }}
+              />
+              <span
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                円
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main BettingSimulator (multi-slot) ─── */
 
 export default function BettingSimulator({
   raceId,
@@ -76,59 +444,59 @@ export default function BettingSimulator({
   prefillHorseIds,
   onPrefillConsumed,
 }: Props) {
-  const [betType, setBetType] = useState<string>("tansho");
-  const [selectedHorses, setSelectedHorses] = useState<string[]>([""]);
-  const [manualOdds, setManualOdds] = useState<string>("");
-  const [amount, setAmount] = useState<number>(100);
+  const [slots, setSlots] = useState<BetSlotState[]>([createSlot()]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(true);
 
-  // Handle prefill from AI recommendations
+  // Handle prefill from AI recommendations → add as a new slot
   useEffect(() => {
     if (!prefillBetType || !prefillHorseIds) return;
     const newType = BET_TYPES.find((t) => t.value === prefillBetType);
     if (!newType) return;
 
-    setBetType(prefillBetType);
-    // Adjust horse IDs to match the expected picks count
     const picks = newType.picks;
     const adjusted = prefillHorseIds.slice(0, picks);
     while (adjusted.length < picks) adjusted.push("");
-    setSelectedHorses(adjusted);
-    setManualOdds("");
+
+    setSlots((prev) => {
+      // If the first slot is still empty/default, replace it
+      const first = prev[0];
+      const firstIsEmpty =
+        prev.length === 1 &&
+        first.betType === "tansho" &&
+        first.selectedHorses.every((h) => h === "");
+      if (firstIsEmpty) {
+        return [
+          {
+            ...first,
+            betType: prefillBetType,
+            selectedHorses: adjusted,
+            manualOdds: "",
+          },
+        ];
+      }
+      // Otherwise add a new slot
+      return [
+        ...prev,
+        {
+          slotId: newSlotId(),
+          betType: prefillBetType,
+          selectedHorses: adjusted,
+          manualOdds: "",
+          amount: 100,
+        },
+      ];
+    });
     setMessage(null);
     onPrefillConsumed?.();
   }, [prefillBetType, prefillHorseIds, onPrefillConsumed]);
 
-  const currentType: BetTypeDef =
-    BET_TYPES.find((t) => t.value === betType) ?? BET_TYPES[0];
-
-  function handleBetTypeChange(value: string) {
-    setBetType(value);
-    const newType = BET_TYPES.find((t) => t.value === value) ?? BET_TYPES[0];
-    setSelectedHorses(Array(newType.picks).fill(""));
-    setManualOdds("");
-    setMessage(null);
-  }
-
-  function handleHorseChange(index: number, horseId: string) {
-    setSelectedHorses((prev) => {
-      const next = [...prev];
-      next[index] = horseId;
-      return next;
-    });
-  }
-
   const sortedEntries = useMemo(
-    () =>
-      [...entries].sort(
-        (a, b) => (a.post_position ?? 999) - (b.post_position ?? 999),
-      ),
+    () => [...entries].sort((a, b) => (a.post_position ?? 999) - (b.post_position ?? 999)),
     [entries],
   );
 
-  // Available bracket numbers for wakuren
   const availableWakus = useMemo(() => {
     const wakus = new Set<number>();
     for (const e of entries) {
@@ -137,94 +505,94 @@ export default function BettingSimulator({
     return Array.from(wakus).sort((a, b) => a - b);
   }, [entries]);
 
-  const isAutoOdds = betType === "tansho";
-  const autoOdds = useMemo(() => {
-    if (!isAutoOdds || !selectedHorses[0]) return null;
-    // Prefer entry with win_odds set (handles duplicate entries)
-    const withOdds = entries.find(
-      (e) => e.horse.id === selectedHorses[0] && e.win_odds !== null,
+  const updateSlot = useCallback((slotId: string, patch: Partial<BetSlotState>) => {
+    setSlots((prev) =>
+      prev.map((s) => (s.slotId === slotId ? { ...s, ...patch } : s)),
     );
-    const raw = withOdds
-      ? withOdds.win_odds
-      : (entries.find((e) => e.horse.id === selectedHorses[0])?.win_odds ??
-        null);
-    return raw !== null ? Number(raw) : null;
-  }, [isAutoOdds, selectedHorses, entries]);
+  }, []);
 
-  const effectiveOdds = isAutoOdds
-    ? autoOdds
-    : manualOdds
-      ? parseFloat(manualOdds)
-      : null;
+  const removeSlot = useCallback((slotId: string) => {
+    setSlots((prev) => prev.filter((s) => s.slotId !== slotId));
+  }, []);
 
-  const allSelected =
-    selectedHorses.length === currentType.picks &&
-    selectedHorses.every((h) => h !== "");
+  const addSlot = useCallback(() => {
+    setSlots((prev) => [...prev, createSlot()]);
+  }, []);
 
-  const estimatedPayout =
-    effectiveOdds !== null && effectiveOdds > 0 && amount > 0
-      ? calculatePayout(amount, effectiveOdds)
-      : null;
-
-  function getHorseNames(): string {
-    if (currentType.isWaku) {
-      return selectedHorses
-        .filter(Boolean)
-        .map((w) => `${w}枠`)
-        .join(", ");
+  // Aggregated stats
+  const slotStats = useMemo(() => {
+    let totalAmount = 0;
+    let totalPayout = 0;
+    let allComplete = true;
+    let completeCount = 0;
+    for (const slot of slots) {
+      totalAmount += slot.amount;
+      const odds = getSlotOdds(slot, entries);
+      if (odds !== null && odds > 0 && slot.amount > 0) {
+        totalPayout += calculatePayout(slot.amount, odds);
+      }
+      if (isSlotComplete(slot)) {
+        completeCount++;
+      } else {
+        allComplete = false;
+      }
     }
-    return selectedHorses
-      .map((hid) => entries.find((e) => e.horse.id === hid)?.horse.name ?? "")
-      .filter(Boolean)
-      .join(", ");
-  }
+    return { totalAmount, totalPayout, allComplete, completeCount };
+  }, [slots, entries]);
 
-  const canSave = allSelected && amount > 0;
-
-  async function handleSave() {
-    if (!canSave) return;
+  async function handleSaveAll() {
+    if (!slotStats.allComplete) return;
     setSaving(true);
     setMessage(null);
-    try {
-      const record: BetRecord = await createBet({
-        race_id: raceId,
-        bet_date: raceDate,
-        bet_type: betType,
-        horse_names: getHorseNames(),
-        amount_yen: amount,
-        odds_at_bet: effectiveOdds,
-      });
-      const sessionBet: SessionBet = {
-        id: record.id,
-        betType: currentType.label,
-        horseNames: getHorseNames(),
-        amount,
-        odds: effectiveOdds,
-        payout: estimatedPayout,
-      };
-      onBetSaved(sessionBet);
-      setMessage("馬券を記録しました");
-    } catch {
-      setMessage("記録に失敗しました");
-    } finally {
-      setSaving(false);
+
+    const savedBets: SessionBet[] = [];
+    let failCount = 0;
+
+    for (const slot of slots) {
+      const typeDef = getTypeDef(slot.betType);
+      const odds = getSlotOdds(slot, entries);
+      const payout =
+        odds !== null && odds > 0 && slot.amount > 0
+          ? calculatePayout(slot.amount, odds)
+          : null;
+      try {
+        const record: BetRecord = await createBet({
+          race_id: raceId,
+          bet_date: raceDate,
+          bet_type: slot.betType,
+          horse_names: getHorseNamesForSlot(slot, entries),
+          amount_yen: slot.amount,
+          odds_at_bet: odds,
+        });
+        savedBets.push({
+          id: record.id,
+          betType: typeDef.label,
+          horseNames: getHorseNamesForSlot(slot, entries),
+          amount: slot.amount,
+          odds,
+          payout,
+        });
+      } catch {
+        failCount++;
+      }
     }
+
+    for (const bet of savedBets) {
+      onBetSaved(bet);
+    }
+
+    if (failCount === 0) {
+      setMessage(`${savedBets.length}件の馬券を記録しました`);
+      // Reset to single empty slot
+      setSlots([createSlot()]);
+    } else {
+      setMessage(`${savedBets.length}件記録、${failCount}件失敗`);
+    }
+    setSaving(false);
   }
 
-  const pickLabels = currentType.isWaku
-    ? PICK_LABELS_WAKU
-    : currentType.ordered
-      ? PICK_LABELS_ORDERED[currentType.picks]
-      : PICK_LABELS_UNORDERED[currentType.picks];
-
-  // Current step indicator
-  const currentStep = !allSelected ? 1 : effectiveOdds === null ? 2 : 3;
-
   const totalSessionAmount = sessionBets.reduce((sum, b) => sum + b.amount, 0);
-  const totalSessionPayout = sessionBets.reduce(
-    (sum, b) => sum + (b.payout ?? 0),
-    0,
-  );
+  const totalSessionPayout = sessionBets.reduce((sum, b) => sum + (b.payout ?? 0), 0);
 
   return (
     <div className="space-y-4">
@@ -233,14 +601,10 @@ export default function BettingSimulator({
         <div
           className="relative overflow-hidden rounded-xl p-[1px]"
           style={{
-            background:
-              "linear-gradient(135deg, rgba(59,130,246,0.3), rgba(139,92,246,0.3))",
+            background: "linear-gradient(135deg, rgba(59,130,246,0.3), rgba(139,92,246,0.3))",
           }}
         >
-          <div
-            className="rounded-xl p-4"
-            style={{ backgroundColor: "var(--bg-elevated)" }}
-          >
+          <div className="rounded-xl p-4" style={{ backgroundColor: "var(--bg-elevated)" }}>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <svg
@@ -271,8 +635,7 @@ export default function BettingSimulator({
                 style={{ color: "var(--text-muted)" }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.color = "var(--text-primary)";
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255,255,255,0.05)";
+                  e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.color = "var(--text-muted)";
@@ -282,24 +645,11 @@ export default function BettingSimulator({
                 閉じる
               </button>
             </div>
-
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
-                {
-                  step: "1",
-                  title: "馬券種・馬を選ぶ",
-                  desc: "8種の馬券種から選択し、馬または枠をドロップダウンから指定",
-                },
-                {
-                  step: "2",
-                  title: "オッズ・掛け金を入力",
-                  desc: "単勝は自動取得。他は手入力。掛け金は100円単位",
-                },
-                {
-                  step: "3",
-                  title: "記録する",
-                  desc: "推定払戻を確認して記録。収支管理ページでも確認可能",
-                },
+                { step: "1", title: "馬券を設定", desc: "馬券種・馬・オッズ・掛け金を入力" },
+                { step: "2", title: "複数追加OK", desc: "「＋ 馬券を追加」で同時に複数設定可能" },
+                { step: "3", title: "まとめて記録", desc: "合計を確認してまとめて記録。収支管理でも確認可能" },
               ].map((s) => (
                 <div
                   key={s.step}
@@ -309,18 +659,14 @@ export default function BettingSimulator({
                   <div
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold"
                     style={{
-                      background:
-                        "linear-gradient(135deg, var(--accent), #8B5CF6)",
+                      background: "linear-gradient(135deg, var(--accent), #8B5CF6)",
                       color: "#fff",
                     }}
                   >
                     {s.step}
                   </div>
                   <div>
-                    <div
-                      className="text-xs font-semibold"
-                      style={{ color: "var(--text-primary)" }}
-                    >
+                    <div className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
                       {s.title}
                     </div>
                     <div
@@ -337,72 +683,39 @@ export default function BettingSimulator({
         </div>
       )}
 
-      {/* Main simulator card */}
-      <div
-        className="relative overflow-hidden rounded-xl"
-        style={{
-          backgroundColor: "var(--bg-elevated)",
-          border: "1px solid var(--border)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-3"
-          style={{
-            borderBottom: "1px solid var(--border)",
-            background:
-              "linear-gradient(135deg, rgba(59,130,246,0.06), rgba(139,92,246,0.06))",
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--accent), #8B5CF6)",
-              }}
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                stroke="#fff"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h2
-                className="text-sm font-bold"
-                style={{ color: "var(--text-primary)" }}
-              >
-                馬券シミュレーション
-              </h2>
-              <span
-                className="text-xs"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {currentType.label} - {currentType.desc}
-              </span>
-            </div>
+      {/* Section header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ background: "linear-gradient(135deg, var(--accent), #8B5CF6)" }}
+          >
+            <svg className="h-4 w-4" fill="none" stroke="#fff" strokeWidth={2} viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
+            </svg>
           </div>
+          <div>
+            <h2 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+              馬券シミュレーション
+            </h2>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {slots.length}件の馬券を設定中
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
           {!showGuide && (
             <button
               type="button"
               onClick={() => setShowGuide(true)}
               className="cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200"
-              style={{
-                color: "var(--accent)",
-                border: "1px solid rgba(59,130,246,0.3)",
-              }}
+              style={{ color: "var(--accent)", border: "1px solid rgba(59,130,246,0.3)" }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor =
-                  "rgba(59,130,246,0.1)";
+                e.currentTarget.style.backgroundColor = "rgba(59,130,246,0.1)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = "transparent";
@@ -412,439 +725,160 @@ export default function BettingSimulator({
             </button>
           )}
         </div>
+      </div>
 
-        <div className="p-5">
-          {/* Step 1: Bet type selection - pill buttons */}
-          <div className="mb-5">
-            <div className="mb-2 flex items-center gap-2">
-              <div
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold"
-                style={{
-                  background:
-                    currentStep >= 1
-                      ? "linear-gradient(135deg, var(--accent), #8B5CF6)"
-                      : "var(--border)",
-                  color: "#fff",
-                }}
-              >
-                1
-              </div>
-              <span
-                className="text-xs font-semibold"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                馬券種を選択
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {BET_TYPES.map((t) => (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => handleBetTypeChange(t.value)}
-                  className="cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200"
-                  style={{
-                    backgroundColor:
-                      betType === t.value
-                        ? "var(--accent)"
-                        : "rgba(255,255,255,0.05)",
-                    color:
-                      betType === t.value ? "#fff" : "var(--text-secondary)",
-                    border:
-                      betType === t.value
-                        ? "1px solid var(--accent)"
-                        : "1px solid var(--border)",
-                    boxShadow:
-                      betType === t.value
-                        ? "0 0 12px rgba(59,130,246,0.3)"
-                        : "none",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (betType !== t.value) {
-                      e.currentTarget.style.borderColor =
-                        "rgba(59,130,246,0.5)";
-                      e.currentTarget.style.color = "var(--text-primary)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (betType !== t.value) {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.color = "var(--text-secondary)";
-                    }
-                  }}
-                >
-                  {t.label}
-                  <span
-                    className="ml-1 opacity-60"
-                    style={{ fontSize: "10px" }}
-                  >
-                    {t.isWaku ? `${t.picks}枠` : `${t.picks}頭`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Bet slot cards */}
+      <div className="space-y-3">
+        {slots.map((slot, index) => (
+          <BetSlotCard
+            key={slot.slotId}
+            slot={slot}
+            index={index}
+            total={slots.length}
+            entries={entries}
+            sortedEntries={sortedEntries}
+            availableWakus={availableWakus}
+            onUpdate={updateSlot}
+            onRemove={removeSlot}
+          />
+        ))}
+      </div>
 
-          {/* Step 1b: Horse selection */}
-          <div className="mb-5">
-            <div className="mb-2 flex items-center gap-2">
-              <div
-                className="h-px flex-1"
-                style={{ backgroundColor: "var(--border)" }}
-              />
-              <span
-                className="text-xs"
-                style={{ color: "var(--text-muted)" }}
-              >
-                馬を選択
-              </span>
-              <div
-                className="h-px flex-1"
-                style={{ backgroundColor: "var(--border)" }}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {selectedHorses.map((sel, idx) => (
-                <div key={idx}>
-                  <label
-                    className="mb-1 block text-xs font-medium"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    {currentType.isWaku
-                      ? (pickLabels?.[idx] ?? `枠${idx + 1}`)
-                      : currentType.picks === 1
-                        ? "馬選択"
-                        : (pickLabels?.[idx] ?? `馬${idx + 1}`)}
-                  </label>
-                  {currentType.isWaku ? (
-                    <select
-                      value={sel}
-                      onChange={(e) => handleHorseChange(idx, e.target.value)}
-                      className="w-full cursor-pointer rounded-lg px-3 py-2.5 text-sm transition-colors duration-200"
-                      style={{
-                        backgroundColor: "rgba(255,255,255,0.03)",
-                        border: sel
-                          ? "1px solid var(--accent)"
-                          : "1px solid var(--border)",
-                        color: "var(--text-primary)",
-                        boxShadow: sel
-                          ? "0 0 8px rgba(59,130,246,0.15)"
-                          : "none",
-                      }}
-                    >
-                      <option value="">枠を選択</option>
-                      {availableWakus
-                        .filter(
-                          (w) =>
-                            String(w) === sel ||
-                            !selectedHorses.some(
-                              (h, i) => i !== idx && h === String(w),
-                            ),
-                        )
-                        .map((w) => {
-                          const horses = entries
-                            .filter((e) => e.bracket_number === w)
-                            .map((e) => e.horse.name)
-                            .join("・");
-                          return (
-                            <option key={w} value={String(w)}>
-                              {w}枠 ({horses})
-                            </option>
-                          );
-                        })}
-                    </select>
-                  ) : (
-                    <select
-                      value={sel}
-                      onChange={(e) => handleHorseChange(idx, e.target.value)}
-                      className="w-full cursor-pointer rounded-lg px-3 py-2.5 text-sm transition-colors duration-200"
-                      style={{
-                        backgroundColor: "rgba(255,255,255,0.03)",
-                        border: sel
-                          ? "1px solid var(--accent)"
-                          : "1px solid var(--border)",
-                        color: "var(--text-primary)",
-                        boxShadow: sel
-                          ? "0 0 8px rgba(59,130,246,0.15)"
-                          : "none",
-                      }}
-                    >
-                      <option value="">選択してください</option>
-                      {sortedEntries
-                        .filter(
-                          (e) =>
-                            e.horse.id === sel ||
-                            !selectedHorses.some(
-                              (h, i) => i !== idx && h === e.horse.id,
-                            ),
-                        )
-                        .map((e, i) => (
-                          <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
-                            {e.post_position ?? "?"}. {e.horse.name}
-                            {e.win_odds !== null
-                              ? ` (${Number(e.win_odds).toFixed(1)}倍)`
-                              : ""}
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Add slot button */}
+      <button
+        type="button"
+        onClick={addSlot}
+        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-3 text-sm font-medium transition-all duration-200"
+        style={{
+          border: "2px dashed var(--border)",
+          color: "var(--text-muted)",
+          backgroundColor: "transparent",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = "var(--accent)";
+          e.currentTarget.style.color = "var(--accent)";
+          e.currentTarget.style.backgroundColor = "rgba(59,130,246,0.05)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = "var(--border)";
+          e.currentTarget.style.color = "var(--text-muted)";
+          e.currentTarget.style.backgroundColor = "transparent";
+        }}
+      >
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        馬券を追加
+      </button>
 
-          {/* Step 2: Odds & Amount */}
-          <div className="mb-5">
-            <div className="mb-2 flex items-center gap-2">
-              <div
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold"
-                style={{
-                  background:
-                    currentStep >= 2
-                      ? "linear-gradient(135deg, var(--accent), #8B5CF6)"
-                      : "var(--border)",
-                  color: "#fff",
-                }}
-              >
-                2
-              </div>
-              <span
-                className="text-xs font-semibold"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                オッズ・掛け金
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {/* Odds */}
-              <div>
-                <label
-                  className="mb-1 block text-xs font-medium"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  オッズ
-                  {isAutoOdds && (
-                    <span
-                      className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px]"
-                      style={{
-                        backgroundColor: "rgba(59,130,246,0.15)",
-                        color: "var(--accent)",
-                      }}
-                    >
-                      自動
-                    </span>
-                  )}
-                </label>
-                {isAutoOdds ? (
-                  <div
-                    className="rounded-lg px-3 py-2.5 text-sm font-semibold tabular-nums"
-                    style={{
-                      backgroundColor: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border)",
-                      color:
-                        autoOdds !== null
-                          ? "var(--text-primary)"
-                          : "var(--text-muted)",
-                    }}
-                  >
-                    {autoOdds !== null ? `${autoOdds.toFixed(1)} 倍` : "---"}
-                  </div>
-                ) : (
-                  <input
-                    type="number"
-                    min={1}
-                    step={0.1}
-                    value={manualOdds}
-                    onChange={(e) => setManualOdds(e.target.value)}
-                    placeholder="例: 12.5"
-                    className="w-full rounded-lg px-3 py-2.5 text-sm tabular-nums transition-colors duration-200"
-                    style={{
-                      backgroundColor: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text-primary)",
-                    }}
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "var(--accent)";
-                      e.currentTarget.style.boxShadow =
-                        "0 0 8px rgba(59,130,246,0.15)";
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
-                )}
-              </div>
-
-              {/* Amount */}
-              <div>
-                <label
-                  className="mb-1 block text-xs font-medium"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  掛け金
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min={100}
-                    step={100}
-                    value={amount}
-                    onChange={(e) => setAmount(Number(e.target.value))}
-                    className="w-full rounded-lg px-3 py-2.5 pr-8 text-sm tabular-nums transition-colors duration-200"
-                    style={{
-                      backgroundColor: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text-primary)",
-                    }}
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "var(--accent)";
-                      e.currentTarget.style.boxShadow =
-                        "0 0 8px rgba(59,130,246,0.15)";
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
-                  <span
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    円
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 3: Result & Save */}
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <div
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold"
-                style={{
-                  background:
-                    currentStep >= 3
-                      ? "linear-gradient(135deg, var(--accent), #8B5CF6)"
-                      : "var(--border)",
-                  color: "#fff",
-                }}
-              >
-                3
-              </div>
-              <span
-                className="text-xs font-semibold"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                確認・記録
-              </span>
-            </div>
-
-            {/* Payout display */}
+      {/* Combined summary & Save */}
+      <div
+        className="overflow-hidden rounded-xl"
+        style={{
+          backgroundColor: "var(--bg-elevated)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <div className="p-4">
+          {/* Summary grid */}
+          <div className="mb-4 grid grid-cols-3 gap-3 text-center">
             <div
-              className="mb-4 rounded-xl p-4 text-center"
+              className="rounded-lg p-3"
+              style={{ backgroundColor: "rgba(255,255,255,0.03)" }}
+            >
+              <div className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+                馬券数
+              </div>
+              <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                {slots.length}
+                <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>件</span>
+              </div>
+            </div>
+            <div
+              className="rounded-lg p-3"
+              style={{ backgroundColor: "rgba(255,255,255,0.03)" }}
+            >
+              <div className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+                合計投資
+              </div>
+              <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                ¥{slotStats.totalAmount.toLocaleString()}
+              </div>
+            </div>
+            <div
+              className="rounded-lg p-3"
               style={{
-                background:
-                  estimatedPayout !== null
-                    ? "linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.05))"
-                    : "rgba(255,255,255,0.02)",
-                border:
-                  estimatedPayout !== null
-                    ? "1px solid rgba(34,197,94,0.3)"
-                    : "1px solid var(--border)",
+                backgroundColor: "rgba(34,197,94,0.08)",
+                border: slotStats.totalPayout > 0 ? "1px solid rgba(34,197,94,0.2)" : "none",
               }}
             >
-              <div
-                className="mb-1 text-xs font-medium"
-                style={{ color: "var(--text-muted)" }}
-              >
-                推定払戻額
+              <div className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+                推定払戻合計
               </div>
               <div
-                className="text-2xl font-bold tabular-nums"
+                className="text-lg font-bold tabular-nums"
                 style={{
-                  color:
-                    estimatedPayout !== null
-                      ? "var(--green)"
-                      : "var(--text-muted)",
-                  textShadow:
-                    estimatedPayout !== null
-                      ? "0 0 20px rgba(34,197,94,0.3)"
-                      : "none",
+                  color: slotStats.totalPayout > 0 ? "var(--green)" : "var(--text-muted)",
                 }}
               >
-                {estimatedPayout !== null
-                  ? `¥${estimatedPayout.toLocaleString()}`
+                {slotStats.totalPayout > 0
+                  ? `¥${slotStats.totalPayout.toLocaleString()}`
                   : "---"}
               </div>
-              {estimatedPayout !== null && amount > 0 && (
-                <div
-                  className="mt-1 text-xs tabular-nums"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  回収率{" "}
-                  <span style={{ color: "var(--green)" }}>
-                    {((estimatedPayout / amount) * 100).toFixed(0)}%
-                  </span>
-                </div>
-              )}
             </div>
+          </div>
 
-            {/* Save button */}
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!canSave || saving}
-              className="w-full cursor-pointer rounded-xl py-3 text-sm font-bold transition-all duration-200"
+          {/* Save all button */}
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            disabled={!slotStats.allComplete || saving}
+            className="w-full cursor-pointer rounded-xl py-3 text-sm font-bold transition-all duration-200"
+            style={{
+              background: slotStats.allComplete
+                ? "linear-gradient(135deg, var(--accent), #8B5CF6)"
+                : "var(--border)",
+              color: slotStats.allComplete ? "#fff" : "var(--text-muted)",
+              opacity: saving ? 0.6 : 1,
+              boxShadow: slotStats.allComplete ? "0 4px 15px rgba(59,130,246,0.3)" : "none",
+            }}
+            onMouseEnter={(e) => {
+              if (slotStats.allComplete) {
+                e.currentTarget.style.boxShadow = "0 6px 20px rgba(59,130,246,0.4)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (slotStats.allComplete) {
+                e.currentTarget.style.boxShadow = "0 4px 15px rgba(59,130,246,0.3)";
+                e.currentTarget.style.transform = "translateY(0)";
+              }
+            }}
+          >
+            {saving
+              ? "保存中..."
+              : slotStats.allComplete
+                ? `${slots.length}件の馬券をまとめて記録する`
+                : `未入力の馬券があります（${slotStats.completeCount}/${slots.length}件入力済み）`}
+          </button>
+
+          {message && (
+            <div
+              className="mt-2 rounded-lg px-3 py-2 text-center text-xs"
               style={{
-                background: canSave
-                  ? "linear-gradient(135deg, var(--accent), #8B5CF6)"
-                  : "var(--border)",
-                color: canSave ? "#fff" : "var(--text-muted)",
-                opacity: saving ? 0.6 : 1,
-                boxShadow: canSave
-                  ? "0 4px 15px rgba(59,130,246,0.3)"
-                  : "none",
-              }}
-              onMouseEnter={(e) => {
-                if (canSave) {
-                  e.currentTarget.style.boxShadow =
-                    "0 6px 20px rgba(59,130,246,0.4)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (canSave) {
-                  e.currentTarget.style.boxShadow =
-                    "0 4px 15px rgba(59,130,246,0.3)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }
+                backgroundColor: message.includes("失敗")
+                  ? "rgba(239,68,68,0.1)"
+                  : "rgba(34,197,94,0.1)",
+                color: message.includes("失敗") ? "var(--red)" : "var(--green)",
               }}
             >
-              {saving ? "保存中..." : "この馬券を記録する"}
-            </button>
-
-            {message && (
-              <div
-                className="mt-2 rounded-lg px-3 py-2 text-center text-xs"
-                style={{
-                  backgroundColor: message.includes("失敗")
-                    ? "rgba(239,68,68,0.1)"
-                    : "rgba(34,197,94,0.1)",
-                  color: message.includes("失敗")
-                    ? "var(--red)"
-                    : "var(--green)",
-                }}
-              >
-                {message}
-              </div>
-            )}
-          </div>
+              {message}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Session bet records */}
+      {/* Session bet records (previously saved) */}
       {sessionBets.length > 0 && (
         <div
           className="overflow-hidden rounded-xl"
@@ -857,27 +891,18 @@ export default function BettingSimulator({
             className="flex items-center justify-between px-5 py-3"
             style={{ borderBottom: "1px solid var(--border)" }}
           >
-            <h3
-              className="text-sm font-bold"
-              style={{ color: "var(--text-primary)" }}
-            >
-              セッション内記録
+            <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+              記録済み馬券
               <span
                 className="ml-2 rounded-full px-2 py-0.5 text-xs font-normal"
-                style={{
-                  backgroundColor: "rgba(59,130,246,0.15)",
-                  color: "var(--accent)",
-                }}
+                style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--accent)" }}
               >
                 {sessionBets.length}件
               </span>
             </h3>
             <div className="flex items-center gap-4">
               <div className="text-right">
-                <div
-                  className="text-[10px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
+                <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
                   合計投資
                 </div>
                 <div
@@ -888,10 +913,7 @@ export default function BettingSimulator({
                 </div>
               </div>
               <div className="text-right">
-                <div
-                  className="text-[10px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
+                <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
                   推定払戻合計
                 </div>
                 <div
@@ -909,14 +931,10 @@ export default function BettingSimulator({
                 key={b.id}
                 className="flex items-center justify-between px-5 py-3 transition-colors duration-150"
                 style={{
-                  borderBottom:
-                    i < sessionBets.length - 1
-                      ? "1px solid var(--border)"
-                      : "none",
+                  borderBottom: i < sessionBets.length - 1 ? "1px solid var(--border)" : "none",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255,255,255,0.02)";
+                  e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.02)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = "transparent";
@@ -925,40 +943,26 @@ export default function BettingSimulator({
                 <div className="flex items-center gap-3">
                   <span
                     className="inline-flex rounded-md px-2 py-0.5 text-xs font-medium"
-                    style={{
-                      backgroundColor: "rgba(139,92,246,0.15)",
-                      color: "#A78BFA",
-                    }}
+                    style={{ backgroundColor: "rgba(139,92,246,0.15)", color: "#A78BFA" }}
                   >
                     {b.betType}
                   </span>
-                  <span
-                    className="text-sm"
-                    style={{ color: "var(--text-primary)" }}
-                  >
+                  <span className="text-sm" style={{ color: "var(--text-primary)" }}>
                     {b.horseNames}
                   </span>
                 </div>
                 <div className="flex items-center gap-4 text-right">
-                  <span
-                    className="text-xs tabular-nums"
-                    style={{ color: "var(--text-muted)" }}
-                  >
+                  <span className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>
                     {b.odds !== null ? `${b.odds.toFixed(1)}倍` : ""}
                   </span>
-                  <span
-                    className="text-xs tabular-nums"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
+                  <span className="text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                     ¥{b.amount.toLocaleString()}
                   </span>
                   <span
                     className="text-sm font-semibold tabular-nums"
                     style={{ color: "var(--green)" }}
                   >
-                    {b.payout !== null
-                      ? `¥${b.payout.toLocaleString()}`
-                      : "---"}
+                    {b.payout !== null ? `¥${b.payout.toLocaleString()}` : "---"}
                   </span>
                 </div>
               </div>
