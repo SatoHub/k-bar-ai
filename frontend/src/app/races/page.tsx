@@ -6,8 +6,14 @@ import {
   fetchRaces,
   fetchDataStatus,
   scrapeShutuba,
+  scrapeOdds,
+  scrapeResults,
+  runPredict,
+  scrapeCalendar,
+  scrapeAll,
   fetchScrapeStatus,
   type RaceListItem,
+  type ScrapeResponse,
 } from "@/lib/api";
 import { decodeRacecourse } from "@/lib/racecourse";
 import RaceFilters from "@/components/RaceFilters";
@@ -32,8 +38,8 @@ function RacesContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dataMaxMonth, setDataMaxMonth] = useState<string>("");
-  const [scraping, setScraping] = useState(false);
-  const [scrapeMsg, setScrapeMsg] = useState<string | null>(null);
+  const [runningTasks, setRunningTasks] = useState<Record<string, boolean>>({});
+  const [taskMsg, setTaskMsg] = useState<string | null>(null);
 
   // Client-side racecourse tab filter (independent of URL params)
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
@@ -162,37 +168,39 @@ function RacesContent() {
     updateParams({ page: String(newPage) });
   }
 
-  async function handleScrape() {
-    const target = paramDate || undefined;
-    setScraping(true);
-    setScrapeMsg(null);
+  const anyRunning = Object.values(runningTasks).some(Boolean);
+
+  async function runTask(
+    taskKey: string,
+    statusKey: "shutuba" | "odds" | "results" | "predict" | "calendar" | "all",
+    apiFn: () => Promise<ScrapeResponse>,
+  ) {
+    setRunningTasks((prev) => ({ ...prev, [taskKey]: true }));
+    setTaskMsg(null);
     try {
-      const res = await scrapeShutuba(target);
-      setScrapeMsg(res.message);
+      const res = await apiFn();
+      setTaskMsg(res.message);
       if (res.success) {
-        // Poll for completion every 5 seconds
         const poll = setInterval(async () => {
           try {
-            const st = await fetchScrapeStatus(target);
+            const st = await fetchScrapeStatus(statusKey, paramDate || undefined);
             if (!st.running) {
               clearInterval(poll);
-              setScraping(false);
-              setScrapeMsg("出走馬データの取得が完了しました。");
+              setRunningTasks((prev) => ({ ...prev, [taskKey]: false }));
+              setTaskMsg(`${taskKey} が完了しました。`);
               loadRaces();
             }
           } catch {
             clearInterval(poll);
-            setScraping(false);
+            setRunningTasks((prev) => ({ ...prev, [taskKey]: false }));
           }
         }, 5000);
       } else {
-        setScraping(false);
+        setRunningTasks((prev) => ({ ...prev, [taskKey]: false }));
       }
     } catch (e) {
-      setScrapeMsg(
-        e instanceof Error ? e.message : "スクレイピングの開始に失敗しました",
-      );
-      setScraping(false);
+      setTaskMsg(e instanceof Error ? e.message : "実行に失敗しました");
+      setRunningTasks((prev) => ({ ...prev, [taskKey]: false }));
     }
   }
 
@@ -214,39 +222,72 @@ function RacesContent() {
             onFilter={handleFilter}
           />
 
-          {/* Scrape button + status */}
+          {/* Data operation buttons */}
           <div
-            className="flex flex-wrap items-center gap-3"
+            className="glass-card p-4"
           >
-            <button
-              type="button"
-              onClick={handleScrape}
-              disabled={scraping}
-              className="cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: scraping ? "var(--bg-elevated)" : "var(--accent)",
-                color: scraping ? "var(--text-secondary)" : "#fff",
-                border: "1px solid transparent",
-              }}
-            >
-              {scraping ? (
-                <span className="flex items-center gap-2">
-                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" />
-                  </svg>
-                  取得中...
-                </span>
-              ) : (
-                "出走馬を取得"
-              )}
-            </button>
-            {scrapeMsg && (
-              <span
-                className="text-sm"
-                style={{ color: "var(--text-secondary)" }}
+            <div className="mb-2 text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+              データ取得・実行
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { key: "出馬表", statusKey: "shutuba" as const, fn: () => scrapeShutuba(paramDate || undefined) },
+                { key: "オッズ", statusKey: "odds" as const, fn: () => scrapeOdds(paramDate || undefined) },
+                { key: "レース結果", statusKey: "results" as const, fn: () => scrapeResults(paramDate || undefined) },
+                { key: "AI予想", statusKey: "predict" as const, fn: () => runPredict(paramDate || undefined) },
+                { key: "カレンダー", statusKey: "calendar" as const, fn: () => scrapeCalendar() },
+              ]).map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => runTask(t.key, t.statusKey, t.fn)}
+                  disabled={anyRunning}
+                  className="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: runningTasks[t.key] ? "var(--bg-elevated)" : "rgba(59,130,246,0.1)",
+                    color: runningTasks[t.key] ? "var(--text-secondary)" : "var(--accent)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  {runningTasks[t.key] ? (
+                    <span className="flex items-center gap-1.5">
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" />
+                      </svg>
+                      {t.key}...
+                    </span>
+                  ) : (
+                    t.key
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => runTask("一括実行", "all", () => scrapeAll(paramDate || undefined))}
+                disabled={anyRunning}
+                className="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: runningTasks["一括実行"] ? "var(--bg-elevated)" : "var(--accent)",
+                  color: runningTasks["一括実行"] ? "var(--text-secondary)" : "#fff",
+                  border: "1px solid transparent",
+                }}
               >
-                {scrapeMsg}
-              </span>
+                {runningTasks["一括実行"] ? (
+                  <span className="flex items-center gap-1.5">
+                    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" />
+                    </svg>
+                    実行中...
+                  </span>
+                ) : (
+                  "一括実行"
+                )}
+              </button>
+            </div>
+            {taskMsg && (
+              <p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+                {taskMsg}
+              </p>
             )}
           </div>
 

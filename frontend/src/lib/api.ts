@@ -606,7 +606,30 @@ export function scrapeShutuba(date?: string): Promise<ScrapeResponse> {
   return postJSON<ScrapeResponse>("/scraper/shutuba", { date: date || null });
 }
 
-export function fetchScrapeStatus(date?: string): Promise<ScrapeStatus> {
+export function scrapeOdds(date?: string): Promise<ScrapeResponse> {
+  return postJSON<ScrapeResponse>("/scraper/odds", { date: date || null });
+}
+
+export function scrapeResults(date?: string): Promise<ScrapeResponse> {
+  return postJSON<ScrapeResponse>("/scraper/results", { date: date || null });
+}
+
+export function runPredict(date?: string): Promise<ScrapeResponse> {
+  return postJSON<ScrapeResponse>("/scraper/predict", { date: date || null });
+}
+
+export function scrapeCalendar(): Promise<ScrapeResponse> {
+  return postJSON<ScrapeResponse>("/scraper/calendar");
+}
+
+export function scrapeAll(date?: string): Promise<ScrapeResponse> {
+  return postJSON<ScrapeResponse>("/scraper/all", { date: date || null });
+}
+
+export function fetchScrapeStatus(
+  task: "shutuba" | "odds" | "results" | "predict" | "calendar" | "all",
+  date?: string,
+): Promise<ScrapeStatus> {
   const qs = date ? `?date=${date}` : "";
-  return fetchJSON<ScrapeStatus>(`/scraper/shutuba/status${qs}`);
+  return fetchJSON<ScrapeStatus>(`/scraper/${task}/status${qs}`);
 }
