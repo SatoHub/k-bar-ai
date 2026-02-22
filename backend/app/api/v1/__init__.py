@@ -10,6 +10,7 @@ from app.api.v1.predictions import router as predictions_router
 from app.api.v1.races import router as races_router
 from app.api.v1.results import router as results_router
 from app.api.v1.scheduler import router as scheduler_router
+from app.api.v1.scraper import router as scraper_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(health_router)
@@ -22,3 +23,4 @@ router.include_router(data_status_router)
 router.include_router(predictions_router)
 router.include_router(results_router)
 router.include_router(scheduler_router)
+router.include_router(scraper_router)

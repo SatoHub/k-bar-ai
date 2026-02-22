@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   fetchRaces,
   fetchDataStatus,
+  scrapeShutuba,
+  fetchScrapeStatus,
   type RaceListItem,
 } from "@/lib/api";
 import { decodeRacecourse } from "@/lib/racecourse";
@@ -30,6 +32,8 @@ function RacesContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dataMaxMonth, setDataMaxMonth] = useState<string>("");
+  const [scraping, setScraping] = useState(false);
+  const [scrapeMsg, setScrapeMsg] = useState<string | null>(null);
 
   // Client-side racecourse tab filter (independent of URL params)
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
@@ -158,6 +162,40 @@ function RacesContent() {
     updateParams({ page: String(newPage) });
   }
 
+  async function handleScrape() {
+    const target = paramDate || undefined;
+    setScraping(true);
+    setScrapeMsg(null);
+    try {
+      const res = await scrapeShutuba(target);
+      setScrapeMsg(res.message);
+      if (res.success) {
+        // Poll for completion every 5 seconds
+        const poll = setInterval(async () => {
+          try {
+            const st = await fetchScrapeStatus(target);
+            if (!st.running) {
+              clearInterval(poll);
+              setScraping(false);
+              setScrapeMsg("出走馬データの取得が完了しました。");
+              loadRaces();
+            }
+          } catch {
+            clearInterval(poll);
+            setScraping(false);
+          }
+        }, 5000);
+      } else {
+        setScraping(false);
+      }
+    } catch (e) {
+      setScrapeMsg(
+        e instanceof Error ? e.message : "スクレイピングの開始に失敗しました",
+      );
+      setScraping(false);
+    }
+  }
+
   // Count races per course for tab badges
   function courseCount(course: string): number {
     return items.filter((item) => getCourseName(item) === course).length;
@@ -175,6 +213,42 @@ function RacesContent() {
             initialRacecourse={paramRacecourse}
             onFilter={handleFilter}
           />
+
+          {/* Scrape button + status */}
+          <div
+            className="flex flex-wrap items-center gap-3"
+          >
+            <button
+              type="button"
+              onClick={handleScrape}
+              disabled={scraping}
+              className="cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: scraping ? "var(--bg-elevated)" : "var(--accent)",
+                color: scraping ? "var(--text-secondary)" : "#fff",
+                border: "1px solid transparent",
+              }}
+            >
+              {scraping ? (
+                <span className="flex items-center gap-2">
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" />
+                  </svg>
+                  取得中...
+                </span>
+              ) : (
+                "出走馬を取得"
+              )}
+            </button>
+            {scrapeMsg && (
+              <span
+                className="text-sm"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {scrapeMsg}
+              </span>
+            )}
+          </div>
 
           {/* Calendar — mobile: above table, desktop: sidebar */}
           <div className="lg:hidden">

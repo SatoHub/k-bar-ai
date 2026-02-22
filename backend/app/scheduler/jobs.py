@@ -167,7 +167,7 @@ async def job_shutuba(manager: SchedulerManager) -> None:
         from app.scraper.store import get_races_without_entries, store_shutuba
 
         today = _today_jst()
-        target_dates = [today + timedelta(days=1), today + timedelta(days=2)]
+        target_dates = [today, today + timedelta(days=1), today + timedelta(days=2)]
 
         total_entries = 0
         total_races = 0

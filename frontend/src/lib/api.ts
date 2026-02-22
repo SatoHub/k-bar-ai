@@ -584,3 +584,29 @@ export function pauseScheduler(): Promise<TriggerResponse> {
 export function resumeScheduler(): Promise<TriggerResponse> {
   return postJSON<TriggerResponse>("/scheduler/resume");
 }
+
+// ---------------------------------------------------------------------------
+// Scraper
+// ---------------------------------------------------------------------------
+
+export type ScrapeResponse = {
+  success: boolean;
+  message: string;
+};
+
+export type ScrapeStatus = {
+  date: string;
+  running: boolean;
+  last_status: string | null;
+  last_entries: number | null;
+  last_finished: string | null;
+};
+
+export function scrapeShutuba(date?: string): Promise<ScrapeResponse> {
+  return postJSON<ScrapeResponse>("/scraper/shutuba", { date: date || null });
+}
+
+export function fetchScrapeStatus(date?: string): Promise<ScrapeStatus> {
+  const qs = date ? `?date=${date}` : "";
+  return fetchJSON<ScrapeStatus>(`/scraper/shutuba/status${qs}`);
+}
