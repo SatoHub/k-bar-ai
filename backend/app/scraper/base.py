@@ -30,7 +30,17 @@ class BaseScraper:
 
     async def __aenter__(self) -> "BaseScraper":
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(headless=self._headless)
+        self._browser = await self._pw.chromium.launch(
+            headless=self._headless,
+            args=[
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--single-process",
+                "--disable-extensions",
+                "--disable-background-networking",
+            ],
+        )
         logger.info("Browser launched (headless=%s)", self._headless)
         return self
 

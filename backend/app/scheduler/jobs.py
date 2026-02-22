@@ -41,12 +41,22 @@ def register_jobs(
         replace_existing=True,
     )
 
-    # 2. Shutuba fetch: daily at 18:00 JST
+    # 2a. Shutuba fetch (morning): daily at 9:00 JST
+    scheduler.add_job(
+        job_shutuba,
+        CronTrigger(hour=settings.SCHED_SHUTUBA_MORNING_HOUR, minute=settings.SCHED_SHUTUBA_MORNING_MINUTE, timezone=tz),
+        id="shutuba_morning",
+        name="出馬表取得(朝)",
+        kwargs={"manager": manager},
+        replace_existing=True,
+    )
+
+    # 2b. Shutuba fetch (evening): daily at 18:00 JST (fallback)
     scheduler.add_job(
         job_shutuba,
         CronTrigger(hour=settings.SCHED_SHUTUBA_HOUR, minute=settings.SCHED_SHUTUBA_MINUTE, timezone=tz),
         id="shutuba",
-        name="出馬表取得",
+        name="出馬表取得(夕方)",
         kwargs={"manager": manager},
         replace_existing=True,
     )
@@ -113,7 +123,7 @@ def register_jobs(
         replace_existing=True,
     )
 
-    logger.info("Registered 7 scheduler jobs")
+    logger.info("Registered 8 scheduler jobs")
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +220,19 @@ async def job_shutuba(manager: SchedulerManager) -> None:
         detail = f"{total_entries} entries across {total_races} races"
         logger.info("Shutuba fetch complete: %s", detail)
         manager.record_job_run("shutuba", status="success", detail=detail)
+
+        # Verification: check for remaining races without entries
+        remaining_ids = []
+        for target_date in target_dates:
+            remaining_ids.extend(get_races_without_entries(target_date))
+        if remaining_ids:
+            logger.warning(
+                "Shutuba verification: %d races still without entries: %s",
+                len(remaining_ids),
+                remaining_ids[:10],  # Log first 10 to avoid huge output
+            )
+        else:
+            logger.info("Shutuba verification: all target races have entries")
 
     except Exception as e:
         logger.error("Shutuba fetch failed: %s", e, exc_info=True)

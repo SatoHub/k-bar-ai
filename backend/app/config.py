@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     # Calendar scan: daily at 6:00 JST
     SCHED_CALENDAR_HOUR: int = 6
     SCHED_CALENDAR_MINUTE: int = 0
-    # Shutuba fetch: daily at 18:00 JST
+    # Shutuba fetch: morning at 9:00 JST + evening at 18:00 JST
+    SCHED_SHUTUBA_MORNING_HOUR: int = 9
+    SCHED_SHUTUBA_MORNING_MINUTE: int = 0
     SCHED_SHUTUBA_HOUR: int = 18
     SCHED_SHUTUBA_MINUTE: int = 0
     # Odds fetch: every 30 min from 8:00-16:30 JST

@@ -5,4 +5,5 @@ echo "=== Running Alembic migrations ==="
 uv run alembic upgrade head
 
 echo "=== Starting uvicorn ==="
-exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+WORKERS="${UVICORN_WORKERS:-1}"
+exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "$WORKERS"
