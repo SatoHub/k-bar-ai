@@ -49,6 +49,11 @@
   --bracket-8: #ec4899;
 }
 
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 body {
   font-family: 'Noto Sans JP', system-ui, -apple-system, sans-serif;
   background-color: var(--bg-base);
