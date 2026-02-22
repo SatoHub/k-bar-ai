@@ -18,7 +18,7 @@ if [ ! -f .env ]; then
 fi
 
 echo "=== 3. Build & start containers ==="
-docker compose --env-file .env -f docker/docker-compose.prod.yml build
+docker compose --env-file .env -f docker/docker-compose.prod.yml build --no-cache
 docker compose --env-file .env -f docker/docker-compose.prod.yml up -d
 
 echo "=== 4. Wait for services ==="
