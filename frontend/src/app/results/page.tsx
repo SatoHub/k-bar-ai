@@ -170,7 +170,7 @@ export default function ResultsPage() {
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-hidden">
       <h1
         className="text-2xl font-bold"
         style={{ color: "var(--text-primary)" }}
@@ -180,7 +180,7 @@ export default function ResultsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr] min-w-0">
         {/* Left: Calendar + Summary */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           {/* Calendar */}
           <div className="glass-card p-4">
             <div className="mb-3 flex items-center justify-between">
