@@ -2,6 +2,11 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { createBet, fetchComboOdds, type RaceEntry, type BetRecord } from "@/lib/api";
+import {
+  type BuyingMethodType,
+  getPointCount,
+  expandCombinations,
+} from "@/lib/betCalculations";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる", isWaku: false },
@@ -16,6 +21,33 @@ const BET_TYPES = [
 
 type BetTypeDef = (typeof BET_TYPES)[number];
 
+const BUYING_METHODS: {
+  value: BuyingMethodType;
+  label: string;
+  supportedBetTypes: string[];
+}[] = [
+  {
+    value: "normal",
+    label: "通常",
+    supportedBetTypes: ["tansho", "fukusho", "wakuren", "umaren", "umatan", "wide", "sanrenpuku", "sanrentan"],
+  },
+  {
+    value: "box",
+    label: "ボックス",
+    supportedBetTypes: ["wakuren", "umaren", "umatan", "wide", "sanrenpuku", "sanrentan"],
+  },
+  {
+    value: "formation",
+    label: "フォーメーション",
+    supportedBetTypes: ["umaren", "umatan", "wide", "sanrenpuku", "sanrentan"],
+  },
+  {
+    value: "nagashi",
+    label: "流し",
+    supportedBetTypes: ["umaren", "umatan", "wide", "sanrenpuku", "sanrentan"],
+  },
+];
+
 type SessionBet = {
   id: string;
   betType: string;
@@ -28,12 +60,20 @@ type SessionBet = {
 type BetSlotState = {
   slotId: string;
   betType: string;
-  selectedHorses: string[];
+  buyingMethod: BuyingMethodType;
+  selectedHorses: string[];       // normal mode selections
+  boxSelections: string[];        // box mode: selected horse IDs
+  formationSets: string[][];      // formation mode: per-position candidates
+  axisHorses: string[];           // nagashi mode: axis horses
+  partnerHorses: string[];        // nagashi mode: partner horses
+  nagashiAxisCount: 1 | 2;        // nagashi mode: 1 or 2 axis horses
+  nagashiAxisPositions: number[]; // nagashi ordered: which positions axis horses fix to
   manualOdds: string;
   amount: number;
   fetchedOdds: number | null;
   oddsFetching: boolean;
   oddsFetchFailed: boolean;
+  showCombinations: boolean;      // toggle for combination preview
 };
 
 type Props = {
@@ -74,12 +114,20 @@ function createSlot(betType = "tansho"): BetSlotState {
   return {
     slotId: newSlotId(),
     betType,
+    buyingMethod: "normal",
     selectedHorses: Array(typeDef.picks).fill(""),
+    boxSelections: [],
+    formationSets: Array(typeDef.picks).fill(null).map(() => []),
+    axisHorses: [],
+    partnerHorses: [],
+    nagashiAxisCount: 1,
+    nagashiAxisPositions: [0], // default: axis at 1st position
     manualOdds: "",
     amount: 100,
     fetchedOdds: null,
     oddsFetching: false,
     oddsFetchFailed: false,
+    showCombinations: false,
   };
 }
 
@@ -112,13 +160,52 @@ function getSlotOdds(
   return null;
 }
 
+function getSlotPointCount(slot: BetSlotState): number {
+  const typeDef = getTypeDef(slot.betType);
+  return getPointCount(
+    {
+      buyingMethod: slot.buyingMethod,
+      betType: slot.betType,
+      boxSelections: slot.boxSelections,
+      formationSets: slot.formationSets,
+      axisHorses: slot.axisHorses,
+      partnerHorses: slot.partnerHorses,
+      nagashiAxisPositions: slot.nagashiAxisPositions,
+    },
+    { picks: typeDef.picks, ordered: typeDef.ordered },
+  );
+}
+
 function isSlotComplete(slot: BetSlotState): boolean {
   const typeDef = getTypeDef(slot.betType);
-  return (
-    slot.selectedHorses.length === typeDef.picks &&
-    slot.selectedHorses.every((h) => h !== "") &&
-    slot.amount > 0
-  );
+  if (slot.amount <= 0) return false;
+
+  switch (slot.buyingMethod) {
+    case "normal":
+      return (
+        slot.selectedHorses.length === typeDef.picks &&
+        slot.selectedHorses.every((h) => h !== "")
+      );
+    case "box":
+      return slot.boxSelections.length >= typeDef.picks;
+    case "formation":
+      return (
+        slot.formationSets.length === typeDef.picks &&
+        slot.formationSets.every((s) => s.length > 0) &&
+        getSlotPointCount(slot) > 0
+      );
+    case "nagashi": {
+      // Axis count must match the configured nagashi mode (1-axis or 2-axis)
+      if (slot.axisHorses.length !== slot.nagashiAxisCount) return false;
+      const neededPartners = typeDef.picks - slot.axisHorses.length;
+      return (
+        slot.partnerHorses.length >= neededPartners &&
+        getSlotPointCount(slot) > 0
+      );
+    }
+    default:
+      return false;
+  }
 }
 
 function getHorseNamesForSlot(
@@ -136,6 +223,134 @@ function getHorseNamesForSlot(
     .map((hid) => entries.find((e) => e.horse.id === hid)?.horse.name ?? "")
     .filter(Boolean)
     .join(", ");
+}
+
+/* ─── Horse Checkbox Grid (inline sub-component) ─── */
+
+function HorseCheckboxGrid({
+  entries,
+  selected,
+  onChange,
+  label,
+  isWaku,
+  availableWakus,
+}: {
+  entries: RaceEntry[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  label?: string;
+  isWaku?: boolean;
+  availableWakus?: number[];
+}) {
+  const items = isWaku
+    ? (availableWakus ?? []).map((w) => ({
+        id: String(w),
+        label: `${w}枠`,
+      }))
+    : [...entries]
+        .sort((a, b) => (a.post_position ?? 999) - (b.post_position ?? 999))
+        .map((e) => ({
+          id: e.horse.id,
+          label: `${e.post_position ?? "?"}${e.horse.name}`,
+        }));
+
+  function toggle(id: string) {
+    onChange(
+      selected.includes(id)
+        ? selected.filter((s) => s !== id)
+        : [...selected, id],
+    );
+  }
+
+  return (
+    <div>
+      {label && (
+        <label
+          className="mb-1 block text-[10px] font-medium"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {label}
+        </label>
+      )}
+      <div className="flex flex-wrap gap-1">
+        {items.map((item) => {
+          const active = selected.includes(item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => toggle(item.id)}
+              className="cursor-pointer rounded-md px-2 py-1.5 text-xs font-medium transition-all duration-150"
+              style={{
+                backgroundColor: active ? "var(--accent)" : "rgba(255,255,255,0.05)",
+                color: active ? "#fff" : "var(--text-muted)",
+                border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Combination Preview ─── */
+
+function CombinationPreview({
+  combinations,
+  entries,
+  isWaku,
+  show,
+  onToggle,
+}: {
+  combinations: string[][];
+  entries: RaceEntry[];
+  isWaku: boolean;
+  show: boolean;
+  onToggle: () => void;
+}) {
+  const count = combinations.length;
+  if (count === 0) return null;
+
+  function resolveLabel(id: string): string {
+    if (isWaku) return `${id}枠`;
+    const entry = entries.find((e) => e.horse.id === id);
+    return entry ? `${entry.post_position ?? "?"}${entry.horse.name}` : id;
+  }
+
+  const autoExpand = count <= 10;
+  const visible = autoExpand || show;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex cursor-pointer items-center gap-1 text-[10px] font-medium transition-colors"
+        style={{ color: "var(--accent)" }}
+      >
+        {visible ? "▼" : "▶"} 買い目一覧 ({count}点)
+      </button>
+      {visible && (
+        <div
+          className="mt-1 max-h-40 overflow-y-auto rounded-lg p-2 text-xs"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.03)",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          {combinations.map((combo, i) => (
+            <div key={i} className="py-0.5">
+              {combo.map((id) => resolveLabel(id)).join(" - ")}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ─── Single Bet Slot Card ─── */
@@ -163,23 +378,23 @@ function BetSlotCard({
 }) {
   const typeDef = getTypeDef(slot.betType);
   const effectiveOdds = getSlotOdds(slot, entries);
+  const pointCount = getSlotPointCount(slot);
+  const totalCost = pointCount * slot.amount;
 
-  // Auto-fetch odds when all horses are selected
-  const allHorsesSelected =
+  // For normal mode: auto-fetch odds when all horses are selected
+  const isNormal = slot.buyingMethod === "normal";
+  const allHorsesSelected = isNormal &&
     slot.selectedHorses.length === typeDef.picks &&
     slot.selectedHorses.every((h) => h !== "");
   const selectionsKey = slot.selectedHorses.join(",");
 
   useEffect(() => {
-    if (!allHorsesSelected || slot.manualOdds) return;
-
-    // For tansho, we already have odds from entry data
+    if (!isNormal || !allHorsesSelected || slot.manualOdds) return;
     if (slot.betType === "tansho") return;
 
     let cancelled = false;
     onUpdate(slot.slotId, { oddsFetching: true, fetchedOdds: null, oddsFetchFailed: false });
 
-    // Convert horse IDs to post_position / bracket numbers
     let selections: number[];
     if (typeDef.isWaku) {
       selections = slot.selectedHorses.map(Number);
@@ -213,12 +428,10 @@ function BetSlotCard({
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slot.betType, selectionsKey, allHorsesSelected]);
-  const allSelected =
-    slot.selectedHorses.length === typeDef.picks &&
-    slot.selectedHorses.every((h) => h !== "");
+  }, [slot.betType, selectionsKey, allHorsesSelected, isNormal]);
+
   const estimatedPayout =
-    effectiveOdds !== null && effectiveOdds > 0 && slot.amount > 0
+    isNormal && effectiveOdds !== null && effectiveOdds > 0 && slot.amount > 0
       ? calculatePayout(slot.amount, effectiveOdds)
       : null;
 
@@ -228,15 +441,69 @@ function BetSlotCard({
       ? PICK_LABELS_ORDERED[typeDef.picks]
       : PICK_LABELS_UNORDERED[typeDef.picks];
 
+  // Available buying methods for the current bet type
+  const availableMethods = BUYING_METHODS.filter((m) =>
+    m.supportedBetTypes.includes(slot.betType),
+  );
+
+  // Get combinations for non-normal modes
+  const combinations = useMemo(() => {
+    if (slot.buyingMethod === "normal") return [];
+    return expandCombinations(
+      {
+        buyingMethod: slot.buyingMethod,
+        betType: slot.betType,
+        boxSelections: slot.boxSelections,
+        formationSets: slot.formationSets,
+        axisHorses: slot.axisHorses,
+        partnerHorses: slot.partnerHorses,
+        nagashiAxisPositions: slot.nagashiAxisPositions,
+      },
+      { picks: typeDef.picks, ordered: typeDef.ordered },
+    );
+  }, [
+    slot.buyingMethod, slot.betType, slot.boxSelections,
+    slot.formationSets, slot.axisHorses, slot.partnerHorses,
+    slot.nagashiAxisPositions, typeDef.picks, typeDef.ordered,
+  ]);
+
   function handleBetTypeChange(value: string) {
     const newType = BET_TYPES.find((t) => t.value === value) ?? BET_TYPES[0];
+    // Reset buying method if not supported
+    const methodSupported = BUYING_METHODS.find(
+      (m) => m.value === slot.buyingMethod,
+    )?.supportedBetTypes.includes(value);
     onUpdate(slot.slotId, {
       betType: value,
+      buyingMethod: methodSupported ? slot.buyingMethod : "normal",
       selectedHorses: Array(newType.picks).fill(""),
+      boxSelections: [],
+      formationSets: Array(newType.picks).fill(null).map(() => []),
+      axisHorses: [],
+      partnerHorses: [],
+      nagashiAxisPositions: [0],
       manualOdds: "",
       fetchedOdds: null,
       oddsFetching: false,
       oddsFetchFailed: false,
+      showCombinations: false,
+    });
+  }
+
+  function handleBuyingMethodChange(method: BuyingMethodType) {
+    onUpdate(slot.slotId, {
+      buyingMethod: method,
+      selectedHorses: Array(typeDef.picks).fill(""),
+      boxSelections: [],
+      formationSets: Array(typeDef.picks).fill(null).map(() => []),
+      axisHorses: [],
+      partnerHorses: [],
+      nagashiAxisPositions: [0],
+      manualOdds: "",
+      fetchedOdds: null,
+      oddsFetching: false,
+      oddsFetchFailed: false,
+      showCombinations: false,
     });
   }
 
@@ -245,6 +512,11 @@ function BetSlotCard({
     next[idx] = horseId;
     onUpdate(slot.slotId, { selectedHorses: next });
   }
+
+  // Formation: labels per position
+  const formationLabels = typeDef.ordered
+    ? (PICK_LABELS_ORDERED[typeDef.picks] ?? [])
+    : (PICK_LABELS_UNORDERED[typeDef.picks] ?? []);
 
   return (
     <div
@@ -279,12 +551,32 @@ function BetSlotCard({
           >
             {typeDef.label}
           </span>
+          {slot.buyingMethod !== "normal" && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+              style={{ backgroundColor: "rgba(139,92,246,0.15)", color: "#A78BFA" }}
+            >
+              {BUYING_METHODS.find((m) => m.value === slot.buyingMethod)?.label}
+            </span>
+          )}
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
             {typeDef.desc}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Payout badge */}
+          {/* Point count & cost badge for multi-bet modes */}
+          {slot.buyingMethod !== "normal" && pointCount > 0 && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums"
+              style={{
+                backgroundColor: "rgba(59,130,246,0.15)",
+                color: "var(--accent)",
+              }}
+            >
+              {pointCount}点 ¥{totalCost.toLocaleString()}
+            </span>
+          )}
+          {/* Payout badge (normal mode only) */}
           {estimatedPayout !== null && (
             <span
               className="rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums"
@@ -344,79 +636,331 @@ function BetSlotCard({
           ))}
         </div>
 
-        {/* Horse / Waku selection */}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {slot.selectedHorses.map((sel, idx) => (
-            <div key={idx}>
-              <label
-                className="mb-0.5 block text-[10px] font-medium"
-                style={{ color: "var(--text-muted)" }}
+        {/* Buying method pills (only show if more than 1 method available) */}
+        {availableMethods.length > 1 && (
+          <div className="flex flex-wrap gap-1">
+            {availableMethods.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => handleBuyingMethodChange(m.value)}
+                className="cursor-pointer rounded-full px-2.5 py-1 text-[10px] font-medium transition-all duration-200"
+                style={{
+                  backgroundColor:
+                    slot.buyingMethod === m.value
+                      ? "rgba(139,92,246,0.9)"
+                      : "rgba(255,255,255,0.03)",
+                  color: slot.buyingMethod === m.value ? "#fff" : "var(--text-muted)",
+                  border:
+                    slot.buyingMethod === m.value
+                      ? "1px solid rgba(139,92,246,0.9)"
+                      : "1px solid var(--border)",
+                }}
               >
-                {typeDef.isWaku
-                  ? (pickLabels?.[idx] ?? `枠${idx + 1}`)
-                  : typeDef.picks === 1
-                    ? "馬選択"
-                    : (pickLabels?.[idx] ?? `馬${idx + 1}`)}
-              </label>
-              {typeDef.isWaku ? (
-                <select
-                  value={sel}
-                  onChange={(e) => handleHorseChange(idx, e.target.value)}
-                  className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
-                  style={{
-                    backgroundColor: "#fff",
-                    border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
-                    color: "#000",
-                  }}
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ===== NORMAL MODE ===== */}
+        {slot.buyingMethod === "normal" && (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {slot.selectedHorses.map((sel, idx) => (
+              <div key={idx}>
+                <label
+                  className="mb-0.5 block text-[10px] font-medium"
+                  style={{ color: "var(--text-muted)" }}
                 >
-                  <option value="">枠を選択</option>
-                  {availableWakus
-                    .filter(
-                      (w) =>
-                        String(w) === sel ||
-                        !slot.selectedHorses.some((h, i) => i !== idx && h === String(w)),
-                    )
-                    .map((w) => {
-                      const horses = entries
-                        .filter((e) => e.bracket_number === w)
-                        .map((e) => e.horse.name)
-                        .join("・");
-                      return (
-                        <option key={w} value={String(w)}>
-                          {w}枠 ({horses})
+                  {typeDef.isWaku
+                    ? (pickLabels?.[idx] ?? `枠${idx + 1}`)
+                    : typeDef.picks === 1
+                      ? "馬選択"
+                      : (pickLabels?.[idx] ?? `馬${idx + 1}`)}
+                </label>
+                {typeDef.isWaku ? (
+                  <select
+                    value={sel}
+                    onChange={(e) => handleHorseChange(idx, e.target.value)}
+                    className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
+                    style={{
+                      backgroundColor: "#fff",
+                      border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
+                      color: "#000",
+                    }}
+                  >
+                    <option value="">枠を選択</option>
+                    {availableWakus
+                      .filter(
+                        (w) =>
+                          String(w) === sel ||
+                          !slot.selectedHorses.some((h, i) => i !== idx && h === String(w)),
+                      )
+                      .map((w) => {
+                        const horses = entries
+                          .filter((e) => e.bracket_number === w)
+                          .map((e) => e.horse.name)
+                          .join("・");
+                        return (
+                          <option key={w} value={String(w)}>
+                            {w}枠 ({horses})
+                          </option>
+                        );
+                      })}
+                  </select>
+                ) : (
+                  <select
+                    value={sel}
+                    onChange={(e) => handleHorseChange(idx, e.target.value)}
+                    className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
+                    style={{
+                      backgroundColor: "#fff",
+                      border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
+                      color: "#000",
+                    }}
+                  >
+                    <option value="">選択してください</option>
+                    {sortedEntries
+                      .filter(
+                        (e) =>
+                          e.horse.id === sel ||
+                          !slot.selectedHorses.some((h, i) => i !== idx && h === e.horse.id),
+                      )
+                      .map((e, i) => (
+                        <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
+                          {e.post_position ?? "?"}. {e.horse.name}
+                          {e.win_odds !== null ? ` (${Number(e.win_odds).toFixed(1)}倍)` : ""}
                         </option>
+                      ))}
+                  </select>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ===== BOX MODE ===== */}
+        {slot.buyingMethod === "box" && (
+          <div className="space-y-2">
+            <HorseCheckboxGrid
+              entries={sortedEntries}
+              selected={slot.boxSelections}
+              onChange={(next) => onUpdate(slot.slotId, { boxSelections: next, manualOdds: "", fetchedOdds: null })}
+              label={`対象${typeDef.isWaku ? "枠" : "馬"}を選択（${typeDef.picks}頭以上）`}
+              isWaku={typeDef.isWaku}
+              availableWakus={availableWakus}
+            />
+            {slot.boxSelections.length >= typeDef.picks && (
+              <div className="text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                {slot.boxSelections.length}頭選択 = <strong>{pointCount}点</strong> × ¥{slot.amount.toLocaleString()} = <strong style={{ color: "var(--accent)" }}>¥{totalCost.toLocaleString()}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== FORMATION MODE ===== */}
+        {slot.buyingMethod === "formation" && (
+          <div className="space-y-2">
+            {Array.from({ length: typeDef.picks }).map((_, posIdx) => (
+              <HorseCheckboxGrid
+                key={posIdx}
+                entries={sortedEntries}
+                selected={slot.formationSets[posIdx] ?? []}
+                onChange={(next) => {
+                  const newSets = [...slot.formationSets];
+                  newSets[posIdx] = next;
+                  onUpdate(slot.slotId, { formationSets: newSets, manualOdds: "", fetchedOdds: null });
+                }}
+                label={`${formationLabels[posIdx] ?? `${posIdx + 1}着`}候補`}
+                isWaku={typeDef.isWaku}
+                availableWakus={availableWakus}
+              />
+            ))}
+            {pointCount > 0 && (
+              <div className="text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                <strong>{pointCount}点</strong> × ¥{slot.amount.toLocaleString()} = <strong style={{ color: "var(--accent)" }}>¥{totalCost.toLocaleString()}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== NAGASHI MODE ===== */}
+        {slot.buyingMethod === "nagashi" && (
+          <div className="space-y-2">
+            {/* Axis count toggle */}
+            {typeDef.picks === 3 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+                  軸タイプ:
+                </span>
+                {([1, 2] as const).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => {
+                      const newPositions = n === 1 ? [0] : [0, 1];
+                      onUpdate(slot.slotId, {
+                        nagashiAxisCount: n,
+                        axisHorses: slot.axisHorses.slice(0, n),
+                        nagashiAxisPositions: newPositions,
+                        manualOdds: "",
+                        fetchedOdds: null,
+                      });
+                    }}
+                    className="cursor-pointer rounded-full px-2 py-0.5 text-[10px] font-medium transition-all duration-150"
+                    style={{
+                      backgroundColor: slot.nagashiAxisCount === n ? "var(--accent)" : "rgba(255,255,255,0.05)",
+                      color: slot.nagashiAxisCount === n ? "#fff" : "var(--text-muted)",
+                      border: slot.nagashiAxisCount === n ? "1px solid var(--accent)" : "1px solid var(--border)",
+                    }}
+                  >
+                    {n}頭軸
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Axis position selector (for ordered bet types) */}
+            {typeDef.ordered && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+                  軸馬位置:
+                </span>
+                {Array.from({ length: typeDef.picks }).map((_, pos) => {
+                  // For 2-axis, each axis gets one position
+                  const axisIdx = slot.nagashiAxisPositions.indexOf(pos);
+                  const isSelected = axisIdx >= 0;
+                  return (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => {
+                        if (slot.nagashiAxisCount === 1) {
+                          onUpdate(slot.slotId, { nagashiAxisPositions: [pos], manualOdds: "", fetchedOdds: null });
+                        } else {
+                          // Toggle position for 2-axis
+                          let newPos = [...slot.nagashiAxisPositions];
+                          if (isSelected) {
+                            newPos = newPos.filter((p) => p !== pos);
+                          } else {
+                            newPos.push(pos);
+                            if (newPos.length > slot.nagashiAxisCount) {
+                              newPos = newPos.slice(-slot.nagashiAxisCount);
+                            }
+                          }
+                          newPos.sort((a, b) => a - b);
+                          onUpdate(slot.slotId, { nagashiAxisPositions: newPos, manualOdds: "", fetchedOdds: null });
+                        }
+                      }}
+                      className="cursor-pointer rounded-full px-2 py-0.5 text-[10px] font-medium transition-all duration-150"
+                      style={{
+                        backgroundColor: isSelected ? "rgba(139,92,246,0.9)" : "rgba(255,255,255,0.05)",
+                        color: isSelected ? "#fff" : "var(--text-muted)",
+                        border: isSelected ? "1px solid rgba(139,92,246,0.9)" : "1px solid var(--border)",
+                      }}
+                    >
+                      {pos + 1}着固定
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Axis horse selection */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {Array.from({ length: slot.nagashiAxisCount }).map((_, axIdx) => (
+                <div key={axIdx}>
+                  <label
+                    className="mb-0.5 block text-[10px] font-medium"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    軸馬{slot.nagashiAxisCount > 1 ? ` ${axIdx + 1}` : ""}
+                  </label>
+                  <select
+                    value={slot.axisHorses[axIdx] ?? ""}
+                    onChange={(e) => {
+                      const next = [...slot.axisHorses];
+                      next[axIdx] = e.target.value;
+                      // Remove from partners if selected as axis
+                      const newPartners = slot.partnerHorses.filter(
+                        (p) => !next.includes(p),
                       );
-                    })}
-                </select>
-              ) : (
-                <select
-                  value={sel}
-                  onChange={(e) => handleHorseChange(idx, e.target.value)}
-                  className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
-                  style={{
-                    backgroundColor: "#fff",
-                    border: sel ? "1px solid var(--accent)" : "1px solid var(--border)",
-                    color: "#000",
-                  }}
-                >
-                  <option value="">選択してください</option>
-                  {sortedEntries
-                    .filter(
-                      (e) =>
-                        e.horse.id === sel ||
-                        !slot.selectedHorses.some((h, i) => i !== idx && h === e.horse.id),
-                    )
-                    .map((e, i) => (
-                      <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
-                        {e.post_position ?? "?"}. {e.horse.name}
-                        {e.win_odds !== null ? ` (${Number(e.win_odds).toFixed(1)}倍)` : ""}
-                      </option>
-                    ))}
-                </select>
-              )}
+                      onUpdate(slot.slotId, {
+                        axisHorses: next.filter(Boolean),
+                        partnerHorses: newPartners,
+                        manualOdds: "",
+                        fetchedOdds: null,
+                      });
+                    }}
+                    className="w-full cursor-pointer rounded-lg px-2.5 py-2 text-sm transition-colors duration-200"
+                    style={{
+                      backgroundColor: "#fff",
+                      border: slot.axisHorses[axIdx] ? "1px solid var(--accent)" : "1px solid var(--border)",
+                      color: "#000",
+                    }}
+                  >
+                    <option value="">軸馬を選択</option>
+                    {sortedEntries
+                      .filter(
+                        (e) =>
+                          e.horse.id === slot.axisHorses[axIdx] ||
+                          !slot.axisHorses.some((a, i) => i !== axIdx && a === e.horse.id),
+                      )
+                      .map((e, i) => (
+                        <option key={`${e.horse.id}-${i}`} value={e.horse.id}>
+                          {e.post_position ?? "?"}. {e.horse.name}
+                          {e.win_odds !== null ? ` (${Number(e.win_odds).toFixed(1)}倍)` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+
+            {/* Partner horse checkboxes */}
+            <HorseCheckboxGrid
+              entries={sortedEntries.filter(
+                (e) => !slot.axisHorses.includes(e.horse.id),
+              )}
+              selected={slot.partnerHorses}
+              onChange={(next) =>
+                onUpdate(slot.slotId, { partnerHorses: next, manualOdds: "", fetchedOdds: null })
+              }
+              label="相手馬を選択"
+            />
+
+            {pointCount > 0 && (
+              <div className="text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                <strong>{pointCount}点</strong> × ¥{slot.amount.toLocaleString()} = <strong style={{ color: "var(--accent)" }}>¥{totalCost.toLocaleString()}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Combination Preview (for non-normal modes) */}
+        {slot.buyingMethod !== "normal" && combinations.length > 0 && (
+          <CombinationPreview
+            combinations={combinations}
+            entries={entries}
+            isWaku={typeDef.isWaku}
+            show={slot.showCombinations}
+            onToggle={() => onUpdate(slot.slotId, { showCombinations: !slot.showCombinations })}
+          />
+        )}
+
+        {/* Large combination warning */}
+        {slot.buyingMethod !== "normal" && pointCount > 100 && (
+          <div
+            className="rounded-lg px-3 py-2 text-xs"
+            style={{
+              backgroundColor: "rgba(245,158,11,0.1)",
+              color: "#F59E0B",
+              border: "1px solid rgba(245,158,11,0.2)",
+            }}
+          >
+            {pointCount}点の大量買いです。合計 ¥{totalCost.toLocaleString()} になります。
+          </div>
+        )}
 
         {/* Odds & Amount row */}
         <div className="grid grid-cols-2 gap-2">
@@ -425,7 +969,7 @@ function BetSlotCard({
               className="mb-0.5 block text-[10px] font-medium"
               style={{ color: "var(--text-muted)" }}
             >
-              オッズ
+              {slot.buyingMethod !== "normal" ? "代表オッズ" : "オッズ"}
               {slot.oddsFetching && (
                 <span
                   className="ml-1 rounded-full px-1 py-0.5 text-[9px]"
@@ -451,11 +995,8 @@ function BetSlotCard({
                 </span>
               )}
             </label>
-            {/* Show fetched odds with manual override option */}
             {effectiveOdds !== null && !slot.manualOdds ? (
-              <div
-                className="flex items-center gap-1"
-              >
+              <div className="flex items-center gap-1">
                 <div
                   className="flex-1 rounded-lg px-2.5 py-2 text-sm font-semibold tabular-nums"
                   style={{
@@ -483,7 +1024,17 @@ function BetSlotCard({
                 step={0.1}
                 value={slot.manualOdds}
                 onChange={(e) => onUpdate(slot.slotId, { manualOdds: e.target.value, fetchedOdds: null })}
-                placeholder={slot.oddsFetching ? "取得中..." : slot.oddsFetchFailed ? "オッズを入力" : allHorsesSelected ? "自動取得中..." : "例: 12.5"}
+                placeholder={
+                  slot.buyingMethod !== "normal"
+                    ? "代表オッズを入力"
+                    : slot.oddsFetching
+                      ? "取得中..."
+                      : slot.oddsFetchFailed
+                        ? "オッズを入力"
+                        : allHorsesSelected
+                          ? "自動取得中..."
+                          : "例: 12.5"
+                }
                 className="w-full rounded-lg px-2.5 py-2 text-sm tabular-nums"
                 style={{
                   backgroundColor: "rgba(255,255,255,0.03)",
@@ -498,7 +1049,7 @@ function BetSlotCard({
               className="mb-0.5 block text-[10px] font-medium"
               style={{ color: "var(--text-muted)" }}
             >
-              掛け金
+              {slot.buyingMethod !== "normal" ? "1点あたり掛け金" : "掛け金"}
             </label>
             <div className="relative">
               <input
@@ -574,17 +1125,26 @@ export default function BettingSimulator({
         ];
       }
       // Otherwise add a new slot
+      const newType = BET_TYPES.find((t) => t.value === prefillBetType) ?? BET_TYPES[0];
       return [
         ...prev,
         {
           slotId: newSlotId(),
           betType: prefillBetType,
+          buyingMethod: "normal" as BuyingMethodType,
           selectedHorses: adjusted,
+          boxSelections: [],
+          formationSets: Array(newType.picks).fill(null).map(() => []),
+          axisHorses: [],
+          partnerHorses: [],
+          nagashiAxisCount: 1 as const,
+          nagashiAxisPositions: [0],
           manualOdds: "",
           amount: 100,
           fetchedOdds: null,
           oddsFetching: false,
           oddsFetchFailed: false,
+          showCombinations: false,
         },
       ];
     });
@@ -621,15 +1181,23 @@ export default function BettingSimulator({
 
   // Aggregated stats
   const slotStats = useMemo(() => {
+    let totalPoints = 0;
     let totalAmount = 0;
     let totalPayout = 0;
     let allComplete = true;
     let completeCount = 0;
     for (const slot of slots) {
-      totalAmount += slot.amount;
+      const points = getSlotPointCount(slot);
+      totalPoints += points;
+      totalAmount += points * slot.amount;
       const odds = getSlotOdds(slot, entries);
       if (odds !== null && odds > 0 && slot.amount > 0) {
-        totalPayout += calculatePayout(slot.amount, odds);
+        if (slot.buyingMethod === "normal") {
+          totalPayout += calculatePayout(slot.amount, odds);
+        } else {
+          // For multi-bet: max payout = highest single combo payout × 1 (representative)
+          totalPayout += calculatePayout(slot.amount, odds);
+        }
       }
       if (isSlotComplete(slot)) {
         completeCount++;
@@ -637,7 +1205,7 @@ export default function BettingSimulator({
         allComplete = false;
       }
     }
-    return { totalAmount, totalPayout, allComplete, completeCount };
+    return { totalPoints, totalAmount, totalPayout, allComplete, completeCount };
   }, [slots, entries]);
 
   async function handleSaveAll() {
@@ -651,29 +1219,75 @@ export default function BettingSimulator({
     for (const slot of slots) {
       const typeDef = getTypeDef(slot.betType);
       const odds = getSlotOdds(slot, entries);
-      const payout =
-        odds !== null && odds > 0 && slot.amount > 0
-          ? calculatePayout(slot.amount, odds)
-          : null;
-      try {
-        const record: BetRecord = await createBet({
-          race_id: raceId,
-          bet_date: raceDate,
-          bet_type: slot.betType,
-          horse_names: getHorseNamesForSlot(slot, entries),
-          amount_yen: slot.amount,
-          odds_at_bet: odds,
-        });
-        savedBets.push({
-          id: record.id,
-          betType: typeDef.label,
-          horseNames: getHorseNamesForSlot(slot, entries),
-          amount: slot.amount,
-          odds,
-          payout,
-        });
-      } catch {
-        failCount++;
+
+      if (slot.buyingMethod === "normal") {
+        // Normal: save single bet
+        const payout =
+          odds !== null && odds > 0 && slot.amount > 0
+            ? calculatePayout(slot.amount, odds)
+            : null;
+        try {
+          const record: BetRecord = await createBet({
+            race_id: raceId,
+            bet_date: raceDate,
+            bet_type: slot.betType,
+            horse_names: getHorseNamesForSlot(slot, entries),
+            amount_yen: slot.amount,
+            odds_at_bet: odds,
+          });
+          savedBets.push({
+            id: record.id,
+            betType: typeDef.label,
+            horseNames: getHorseNamesForSlot(slot, entries),
+            amount: slot.amount,
+            odds,
+            payout,
+          });
+        } catch {
+          failCount++;
+        }
+      } else {
+        // Multi-bet: expand combinations and save each
+        const combos = expandCombinations(
+          {
+            buyingMethod: slot.buyingMethod,
+            betType: slot.betType,
+            boxSelections: slot.boxSelections,
+            formationSets: slot.formationSets,
+            axisHorses: slot.axisHorses,
+            partnerHorses: slot.partnerHorses,
+            nagashiAxisPositions: slot.nagashiAxisPositions,
+          },
+          { picks: typeDef.picks, ordered: typeDef.ordered },
+        );
+        for (const combo of combos) {
+          const horseNames = typeDef.isWaku
+            ? combo.map((w) => `${w}枠`).join(", ")
+            : combo
+                .map((hid) => entries.find((e) => e.horse.id === hid)?.horse.name ?? "")
+                .filter(Boolean)
+                .join(", ");
+          try {
+            const record: BetRecord = await createBet({
+              race_id: raceId,
+              bet_date: raceDate,
+              bet_type: slot.betType,
+              horse_names: horseNames,
+              amount_yen: slot.amount,
+              odds_at_bet: odds,
+            });
+            savedBets.push({
+              id: record.id,
+              betType: typeDef.label,
+              horseNames,
+              amount: slot.amount,
+              odds,
+              payout: odds !== null && odds > 0 ? calculatePayout(slot.amount, odds) : null,
+            });
+          } catch {
+            failCount++;
+          }
+        }
       }
     }
 
@@ -683,7 +1297,6 @@ export default function BettingSimulator({
 
     if (failCount === 0) {
       setMessage(`${savedBets.length}件の馬券を記録しました`);
-      // Reset to single empty slot
       setSlots([createSlot()]);
     } else {
       setMessage(`${savedBets.length}件記録、${failCount}件失敗`);
@@ -803,7 +1416,7 @@ export default function BettingSimulator({
               馬券シミュレーション
             </h2>
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {slots.length}件の馬券を設定中
+              {slots.length}件（{slotStats.totalPoints}点）を設定中
             </span>
           </div>
         </div>
@@ -888,11 +1501,11 @@ export default function BettingSimulator({
               style={{ backgroundColor: "rgba(255,255,255,0.03)" }}
             >
               <div className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
-                馬券数
+                合計点数
               </div>
               <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                {slots.length}
-                <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>件</span>
+                {slotStats.totalPoints}
+                <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>点</span>
               </div>
             </div>
             <div
@@ -959,7 +1572,7 @@ export default function BettingSimulator({
             {saving
               ? "保存中..."
               : slotStats.allComplete
-                ? `${slots.length}件の馬券をまとめて記録する`
+                ? `${slotStats.totalPoints}点の馬券をまとめて記録する（¥${slotStats.totalAmount.toLocaleString()}）`
                 : `未入力の馬券があります（${slotStats.completeCount}/${slots.length}件入力済み）`}
           </button>
 

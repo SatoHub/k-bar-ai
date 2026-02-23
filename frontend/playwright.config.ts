@@ -8,11 +8,15 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   use: {
-    baseURL: "http://133.117.72.213",
-    httpCredentials: {
-      username: "admin",
-      password: "kbar2026ai",
-    },
+    baseURL: process.env.BASE_URL || "http://133.117.72.213",
+    ...(process.env.BASE_URL
+      ? {}
+      : {
+          httpCredentials: {
+            username: "admin",
+            password: "kbar2026ai",
+          },
+        }),
     screenshot: "only-on-failure",
   },
   projects: [
