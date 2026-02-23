@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 
+ARG CACHE_BUST=1
 COPY . .
 
 # Ensure public dir exists (Next.js optional)
