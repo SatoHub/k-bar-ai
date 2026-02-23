@@ -16,15 +16,10 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd /opt/kbar
-            echo "=== Git status before pull ==="
-            git status
-            git log --oneline -3
-            echo "=== Git pull ==="
+            sudo chown -R deploy:deploy /opt/kbar/.git
             git pull origin master
-            echo "=== Git status after pull ==="
-            git log --oneline -3
-            grep -c "overflow-hidden" frontend/src/app/results/page.tsx || echo "overflow-hidden NOT found in source"
-            echo "=== Docker build ==="
+            echo "=== Latest commit ==="
+            git log --oneline -1
             docker compose --env-file .env -f docker/docker-compose.prod.yml build --no-cache
             docker compose --env-file .env -f docker/docker-compose.prod.yml up -d
             echo "Deploy complete: $(date)"
