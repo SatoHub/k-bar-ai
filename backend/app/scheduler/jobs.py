@@ -223,7 +223,11 @@ async def job_shutuba(manager: SchedulerManager) -> None:
     logger.info("=== Job: Shutuba fetch starting ===")
     try:
         from app.scraper.netkeiba import NetkeibaScraper
-        from app.scraper.store import get_races_without_entries, store_shutuba
+        from app.scraper.store import (
+            get_races_with_incomplete_entries,
+            get_races_without_entries,
+            store_shutuba,
+        )
 
         today = _today_jst()
         target_dates = [today, today + timedelta(days=1), today + timedelta(days=2)]
@@ -232,10 +236,19 @@ async def job_shutuba(manager: SchedulerManager) -> None:
         total_races = 0
 
         for target_date in target_dates:
-            race_ids = get_races_without_entries(target_date)
+            stub_ids = get_races_without_entries(target_date)
+            incomplete_ids = get_races_with_incomplete_entries(target_date)
+            race_ids = list(dict.fromkeys(stub_ids + incomplete_ids))  # dedupe, keep order
             if not race_ids:
-                logger.info("No stub races for %s, skipping", target_date)
+                logger.info("No stub/incomplete races for %s, skipping", target_date)
                 continue
+            if incomplete_ids:
+                logger.info(
+                    "Found %d incomplete races for %s: %s",
+                    len(incomplete_ids),
+                    target_date,
+                    incomplete_ids,
+                )
 
             logger.info(
                 "Fetching shutuba for %d races on %s",

@@ -287,6 +287,29 @@ def get_race_ids_for_date(target_date: datetime.date) -> list[str]:
         return [r[0] for r in rows]
 
 
+def get_races_with_incomplete_entries(target_date: datetime.date) -> list[str]:
+    """Get race_ids where entries have been fetched but count < head_count."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        from sqlalchemy import func
+
+        entry_count = func.count(RaceEntry.id)
+        rows = session.execute(
+            select(Race.race_id)
+            .outerjoin(RaceEntry, RaceEntry.race_id == Race.id)
+            .where(
+                and_(
+                    Race.race_date == target_date,
+                    Race.stub_only == False,  # noqa: E712
+                    Race.head_count.is_not(None),
+                )
+            )
+            .group_by(Race.id, Race.race_id)
+            .having(entry_count < Race.head_count)
+        ).all()
+        return [r[0] for r in rows]
+
+
 def get_races_needing_results(target_date: datetime.date) -> list[str]:
     """Get race_ids for a date that have entries but no finish results yet."""
     engine = _get_engine()
