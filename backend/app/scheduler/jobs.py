@@ -101,12 +101,26 @@ def register_jobs(
         replace_existing=True,
     )
 
-    # 5. Prediction: daily at 18:30 JST (after shutuba fetch)
+    # 5a. Prediction (morning): daily at 9:30 JST (after morning shutuba at 9:00)
+    scheduler.add_job(
+        job_predict,
+        CronTrigger(
+            hour=settings.SCHED_PREDICT_MORNING_HOUR,
+            minute=settings.SCHED_PREDICT_MORNING_MINUTE,
+            timezone=tz,
+        ),
+        id="predict_morning",
+        name="AI予想実行(朝)",
+        kwargs={"manager": manager},
+        replace_existing=True,
+    )
+
+    # 5b. Prediction (evening): daily at 18:30 JST (after evening shutuba at 18:00)
     scheduler.add_job(
         job_predict,
         CronTrigger(hour=settings.SCHED_PREDICT_HOUR, minute=settings.SCHED_PREDICT_MINUTE, timezone=tz),
         id="predict",
-        name="AI予想実行",
+        name="AI予想実行(夕方)",
         kwargs={"manager": manager},
         replace_existing=True,
     )

@@ -403,11 +403,12 @@ def store_shutuba(shutuba_data: dict, race_date: datetime.date) -> int:
 
                 stmt = pg_insert(RaceEntry).values(entry_values)
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=["race_id", "post_position"],
+                    index_elements=["race_id", "horse_id"],
                     set_={
-                        "horse_id": horse_uuid,
                         "jockey_id": jockey_uuid,
                         "trainer_id": trainer_uuid,
+                        "bracket_number": entry.get("bracket_number"),
+                        "post_position": entry.get("post_position"),
                         "weight_carried_kg": entry.get("weight_carried_kg"),
                         "horse_weight_kg": entry.get("horse_weight_kg"),
                         "horse_weight_diff": entry.get("horse_weight_diff"),

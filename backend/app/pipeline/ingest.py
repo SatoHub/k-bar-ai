@@ -399,7 +399,7 @@ def _insert_entries(session: Session, entries: list[dict]) -> int:
     for i in range(0, len(entries), BATCH_SIZE):
         batch = entries[i : i + BATCH_SIZE]
         stmt = pg_insert(RaceEntry).values(batch)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["race_id", "post_position"])
+        stmt = stmt.on_conflict_do_nothing(index_elements=["race_id", "horse_id"])
         session.execute(stmt)
         inserted += len(batch)
 

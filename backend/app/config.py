@@ -41,7 +41,9 @@ class Settings(BaseSettings):
     SCHED_ODDS_INTERVAL_MINUTES: int = 30
     # Results fetch: at 17:00 and 19:00 JST
     SCHED_RESULTS_HOURS: str = "17,19"
-    # Prediction: daily at 18:30 JST (after shutuba fetch)
+    # Prediction: morning at 9:30 JST (after morning shutuba) + evening at 18:30 JST
+    SCHED_PREDICT_MORNING_HOUR: int = 9
+    SCHED_PREDICT_MORNING_MINUTE: int = 30
     SCHED_PREDICT_HOUR: int = 18
     SCHED_PREDICT_MINUTE: int = 30
     SCHED_PREDICT_MODEL_VERSION: str = "v1.0.0"

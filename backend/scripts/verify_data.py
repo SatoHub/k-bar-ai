@@ -82,13 +82,13 @@ def run_verify() -> None:
         )
         dup_entries = session.scalar(
             text(
-                "SELECT count(*) FROM (SELECT race_id, post_position FROM race_entries "
-                "GROUP BY race_id, post_position HAVING count(*) > 1) t"
+                "SELECT count(*) FROM (SELECT race_id, horse_id FROM race_entries "
+                "GROUP BY race_id, horse_id HAVING count(*) > 1) t"
             )
         )
         for label, count in [
             ("Duplicate race_id in races", dup_races),
-            ("Duplicate (race, post_position) in entries", dup_entries),
+            ("Duplicate (race, horse_id) in entries", dup_entries),
         ]:
             status = "OK" if count == 0 else f"FAIL ({count:,} duplicates)"
             if count > 0:

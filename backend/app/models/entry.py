@@ -10,7 +10,7 @@ from app.models.base import Base
 class RaceEntry(Base):
     __tablename__ = "race_entries"
     __table_args__ = (
-        Index("ix_race_entries_race_post", "race_id", "post_position", unique=True),
+        Index("ix_race_entries_race_horse", "race_id", "horse_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
