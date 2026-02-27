@@ -401,7 +401,6 @@ async def _run_all(target_date: dt.date) -> None:
     try:
         # 1. Calendar scan
         logger.info("RunAll: starting calendar scan")
-        await _run_calendar.__wrapped__(target_date) if hasattr(_run_calendar, '__wrapped__') else None
         from app.scheduler.http_fetcher import fetch_race_lists_multi
         from app.scraper.store import store_race_stubs
 
