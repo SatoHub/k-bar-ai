@@ -27,7 +27,6 @@ class BaseScraper:
         "--disable-dev-shm-usage",
         "--no-sandbox",
         "--disable-gpu",
-        "--single-process",
         "--disable-extensions",
         "--disable-background-networking",
     ]
