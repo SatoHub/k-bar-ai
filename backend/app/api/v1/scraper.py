@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import time
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -17,8 +18,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scraper", tags=["scraper"])
 
-# Simple in-memory lock to prevent duplicate tasks
-_running: dict[str, bool] = {}
+# In-memory lock with timestamp to auto-expire stale locks (15 min timeout)
+_running: dict[str, float] = {}  # key -> start timestamp
+_LOCK_TIMEOUT_SECONDS = 15 * 60  # 15 minutes
 
 
 def _today_jst() -> dt.date:
@@ -36,11 +38,23 @@ def _parse_date(date_str: str | None) -> dt.date:
     return _today_jst()
 
 
+def _is_running(key: str) -> bool:
+    """Check if a task is running, auto-expiring stale locks."""
+    started = _running.get(key)
+    if started is None:
+        return False
+    if time.monotonic() - started > _LOCK_TIMEOUT_SECONDS:
+        logger.warning("Lock expired for %s (started %.0fs ago), releasing", key, time.monotonic() - started)
+        _running.pop(key, None)
+        return False
+    return True
+
+
 def _try_start(key: str, label: str) -> ScrapeResponse | None:
     """Return a 'already running' response if key is active, else mark it."""
-    if _running.get(key):
+    if _is_running(key):
         return ScrapeResponse(success=False, message=f"{label}は現在実行中です。")
-    _running[key] = True
+    _running[key] = time.monotonic()
     return None
 
 
@@ -64,12 +78,13 @@ class TaskStatusResponse(BaseModel):
 def _query_scrape_log(task_type: str, date_obj: dt.date) -> dict:
     """Query ScrapeLog for the latest entry of a given type+date."""
     try:
-        from sqlalchemy import create_engine, select
+        from sqlalchemy import select
         from sqlalchemy.orm import Session
 
         from app.models.scrape_log import ScrapeLog
+        from app.scraper.store import _get_engine
 
-        engine = create_engine(settings.database_url_sync, echo=False)
+        engine = _get_engine()
         with Session(engine) as session:
             stmt = (
                 select(ScrapeLog)
@@ -87,7 +102,6 @@ def _query_scrape_log(task_type: str, date_obj: dt.date) -> dict:
                     if log.finished_at
                     else None,
                 }
-        engine.dispose()
     except Exception as e:
         logger.warning("Failed to check scrape log: %s", e)
     return {"last_status": None, "last_entries": None, "last_finished": None}
@@ -111,6 +125,7 @@ async def _run_shutuba(target_date: dt.date) -> None:
             if not race_list:
                 return
             total = 0
+            failed = 0
             for ri in race_list:
                 try:
                     shutuba = await nk.scrape_shutuba(ri["race_id"])
@@ -120,8 +135,15 @@ async def _run_shutuba(target_date: dt.date) -> None:
                         shutuba["race_name"] = ri["race_name"]
                     total += store_shutuba(shutuba, target_date)
                 except Exception as e:
-                    logger.warning("shutuba %s: %s", ri["race_id"], e)
-        logger.info("Scraper[shutuba]: stored %d entries for %s", total, target_date)
+                    failed += 1
+                    logger.warning("shutuba %s: %s", ri["race_id"], e, exc_info=True)
+        if failed > 0:
+            logger.error(
+                "Scraper[shutuba]: stored %d entries for %s (%d/%d races FAILED)",
+                total, target_date, failed, len(race_list),
+            )
+        else:
+            logger.info("Scraper[shutuba]: stored %d entries for %s (all %d races OK)", total, target_date, len(race_list))
     except Exception as e:
         logger.error("Scraper[shutuba] failed: %s", e, exc_info=True)
     finally:
@@ -147,7 +169,7 @@ async def shutuba_status(target_date: str | None = Query(None, alias="date")):
     date_obj = _parse_date(target_date)
     key = f"shutuba:{date_obj.isoformat()}"
     info = _query_scrape_log("shutuba", date_obj)
-    return TaskStatusResponse(date=date_obj.isoformat(), running=_running.get(key, False), **info)
+    return TaskStatusResponse(date=date_obj.isoformat(), running=_is_running(key), **info)
 
 
 # =========================================================================
@@ -200,7 +222,7 @@ async def odds_status(target_date: str | None = Query(None, alias="date")):
     date_obj = _parse_date(target_date)
     key = f"odds:{date_obj.isoformat()}"
     info = _query_scrape_log("odds", date_obj)
-    return TaskStatusResponse(date=date_obj.isoformat(), running=_running.get(key, False), **info)
+    return TaskStatusResponse(date=date_obj.isoformat(), running=_is_running(key), **info)
 
 
 # =========================================================================
@@ -253,7 +275,7 @@ async def results_status(target_date: str | None = Query(None, alias="date")):
     date_obj = _parse_date(target_date)
     key = f"results:{date_obj.isoformat()}"
     info = _query_scrape_log("result", date_obj)
-    return TaskStatusResponse(date=date_obj.isoformat(), running=_running.get(key, False), **info)
+    return TaskStatusResponse(date=date_obj.isoformat(), running=_is_running(key), **info)
 
 
 # =========================================================================
@@ -308,7 +330,7 @@ async def predict_status(target_date: str | None = Query(None, alias="date")):
     # Predictions don't use ScrapeLog — just check running flag
     return TaskStatusResponse(
         date=date_obj.isoformat(),
-        running=_running.get(key, False),
+        running=_is_running(key),
     )
 
 
@@ -364,7 +386,7 @@ async def calendar_status():
     key = "calendar"
     return TaskStatusResponse(
         date=_today_jst().isoformat(),
-        running=_running.get(key, False),
+        running=_is_running(key),
     )
 
 
@@ -459,5 +481,5 @@ async def all_status():
     key = "all"
     return TaskStatusResponse(
         date=_today_jst().isoformat(),
-        running=_running.get(key, False),
+        running=_is_running(key),
     )

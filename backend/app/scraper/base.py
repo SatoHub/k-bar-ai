@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 # Retry backoff seconds
 _BACKOFF = (3, 10, 30)
 _MAX_RETRIES = 3
+_BROWSER_LAUNCH_TIMEOUT = 30  # seconds
+_PAGE_TIMEOUT = 30000  # milliseconds
 
 
 class BaseScraper:
@@ -37,8 +39,14 @@ class BaseScraper:
         self._browser: Browser | None = None
 
     async def __aenter__(self) -> "BaseScraper":
-        self._pw = await async_playwright().start()
-        await self._launch_browser()
+        try:
+            async with asyncio.timeout(_BROWSER_LAUNCH_TIMEOUT):
+                self._pw = await async_playwright().start()
+                await self._launch_browser()
+        except TimeoutError:
+            raise RuntimeError(
+                f"Browser launch timed out after {_BROWSER_LAUNCH_TIMEOUT}s"
+            )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -48,7 +56,10 @@ class BaseScraper:
             except Exception:
                 pass
         if self._pw:
-            await self._pw.stop()
+            try:
+                await self._pw.stop()
+            except Exception:
+                pass
         logger.info("Browser closed")
 
     async def _launch_browser(self) -> None:
@@ -67,7 +78,7 @@ class BaseScraper:
     async def _ensure_browser(self) -> None:
         """Re-launch browser if it has crashed."""
         if not self._browser or not self._browser.is_connected():
-            logger.info("Browser disconnected, re-launching...")
+            logger.warning("Browser disconnected, re-launching...")
             await self._launch_browser()
 
     async def _wait(self) -> None:
@@ -82,80 +93,87 @@ class BaseScraper:
         Returns the page HTML content.
         Raises RuntimeError after max retries.
         """
+        last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES):
+            page: Page | None = None
             try:
                 if attempt > 0:
                     backoff = _BACKOFF[min(attempt, len(_BACKOFF) - 1)]
-                    logger.info("Retry %d, backoff %ds", attempt + 1, backoff)
+                    logger.info("Retry %d/%d, backoff %ds for %s", attempt + 1, _MAX_RETRIES, backoff, url)
                     await asyncio.sleep(backoff)
 
                 await self._ensure_browser()
-                page: Page = await self._browser.new_page()
-                try:
-                    response = await page.goto(
-                        url, wait_until="domcontentloaded", timeout=30000
-                    )
-                    if response and response.status >= 400:
-                        logger.warning("HTTP %d for %s", response.status, url)
-                        if attempt < _MAX_RETRIES - 1:
-                            continue
-                        raise RuntimeError(f"HTTP {response.status} for {url}")
+                page = await self._browser.new_page()
+                response = await page.goto(
+                    url, wait_until="domcontentloaded", timeout=_PAGE_TIMEOUT
+                )
+                if response and response.status >= 400:
+                    logger.warning("HTTP %d for %s", response.status, url)
+                    if attempt < _MAX_RETRIES - 1:
+                        continue
+                    raise RuntimeError(f"HTTP {response.status} for {url}")
 
-                    html = await page.content()
-                    logger.info("Fetched %s (%d bytes)", url, len(html))
-                    return html
-                finally:
+                html = await page.content()
+                logger.info("Fetched %s (%d bytes)", url, len(html))
+                return html
+
+            except Exception as e:
+                last_error = e
+                if attempt < _MAX_RETRIES - 1:
+                    logger.warning("Attempt %d/%d failed for %s: %s", attempt + 1, _MAX_RETRIES, url, e)
+                # else: will raise after loop
+
+            finally:
+                if page:
                     try:
                         await page.close()
                     except Exception:
                         pass
 
-            except Exception as e:
-                if attempt == _MAX_RETRIES - 1:
-                    raise RuntimeError(
-                        f"Failed after {_MAX_RETRIES} retries: {url}"
-                    ) from e
-                logger.warning("Attempt %d failed: %s", attempt + 1, e)
-
-        raise RuntimeError(f"Failed to fetch: {url}")  # unreachable
+        raise RuntimeError(
+            f"Failed after {_MAX_RETRIES} retries: {url}"
+        ) from last_error
 
     async def fetch_json(self, url: str) -> dict:
         """Fetch a JSON API endpoint with retries.
 
         Returns parsed JSON dict.
         """
+        last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES):
+            page: Page | None = None
             try:
                 if attempt > 0:
                     backoff = _BACKOFF[min(attempt, len(_BACKOFF) - 1)]
                     await asyncio.sleep(backoff)
 
                 await self._ensure_browser()
-                page: Page = await self._browser.new_page()
-                try:
-                    response = await page.goto(
-                        url, wait_until="domcontentloaded", timeout=30000
-                    )
-                    if response and response.status >= 400:
-                        if attempt < _MAX_RETRIES - 1:
-                            continue
-                        raise RuntimeError(f"HTTP {response.status} for {url}")
+                page = await self._browser.new_page()
+                response = await page.goto(
+                    url, wait_until="domcontentloaded", timeout=_PAGE_TIMEOUT
+                )
+                if response and response.status >= 400:
+                    if attempt < _MAX_RETRIES - 1:
+                        continue
+                    raise RuntimeError(f"HTTP {response.status} for {url}")
 
-                    text = await page.inner_text("body")
-                    import json
+                text = await page.inner_text("body")
+                import json
 
-                    return json.loads(text)
-                finally:
+                return json.loads(text)
+
+            except Exception as e:
+                last_error = e
+                if attempt < _MAX_RETRIES - 1:
+                    logger.warning("Attempt %d/%d failed for JSON %s: %s", attempt + 1, _MAX_RETRIES, url, e)
+
+            finally:
+                if page:
                     try:
                         await page.close()
                     except Exception:
                         pass
 
-            except Exception as e:
-                if attempt == _MAX_RETRIES - 1:
-                    raise RuntimeError(
-                        f"Failed after {_MAX_RETRIES} retries: {url}"
-                    ) from e
-                logger.warning("Attempt %d failed for JSON: %s", attempt + 1, e)
-
-        raise RuntimeError(f"Failed to fetch JSON: {url}")
+        raise RuntimeError(
+            f"Failed after {_MAX_RETRIES} retries: {url}"
+        ) from last_error

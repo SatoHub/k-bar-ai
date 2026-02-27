@@ -234,6 +234,8 @@ async def job_shutuba(manager: SchedulerManager) -> None:
 
         total_entries = 0
         total_races = 0
+        failed_races = 0
+        total_attempted = 0
 
         for target_date in target_dates:
             stub_ids = get_races_without_entries(target_date)
@@ -255,6 +257,7 @@ async def job_shutuba(manager: SchedulerManager) -> None:
                 len(race_ids),
                 target_date,
             )
+            total_attempted += len(race_ids)
 
             async with NetkeibaScraper(headless=True) as nk:
                 # Get race_list for post_time merging
@@ -275,13 +278,29 @@ async def job_shutuba(manager: SchedulerManager) -> None:
                         total_entries += count
                         total_races += 1
                     except Exception as e:
+                        failed_races += 1
                         logger.warning(
-                            "Failed shutuba for %s: %s", race_id, e
+                            "Failed shutuba for %s: %s", race_id, e,
+                            exc_info=True,
                         )
 
-        detail = f"{total_entries} entries across {total_races} races"
-        logger.info("Shutuba fetch complete: %s", detail)
-        manager.record_job_run("shutuba", status="success", detail=detail)
+        # Determine status based on success/failure ratio
+        detail = f"{total_entries} entries across {total_races}/{total_attempted} races"
+        if failed_races > 0:
+            detail += f" ({failed_races} failed)"
+
+        if total_attempted == 0:
+            status = "skipped"
+            detail = "No races to fetch"
+        elif failed_races == total_attempted:
+            status = "error"
+        elif failed_races > 0:
+            status = "partial"
+        else:
+            status = "success"
+
+        logger.info("Shutuba fetch complete [%s]: %s", status, detail)
+        manager.record_job_run("shutuba", status=status, detail=detail)
 
         # Verification: check for remaining races without entries
         remaining_ids = []
@@ -323,6 +342,7 @@ async def job_odds(manager: SchedulerManager) -> None:
             return
 
         total_odds = 0
+        failed_count = 0
         async with NetkeibaScraper(headless=True) as nk:
             for race_id in race_ids:
                 try:
@@ -330,11 +350,22 @@ async def job_odds(manager: SchedulerManager) -> None:
                     count = store_odds(odds, race_id)
                     total_odds += count
                 except Exception as e:
-                    logger.warning("Failed odds for %s: %s", race_id, e)
+                    failed_count += 1
+                    logger.warning("Failed odds for %s: %s", race_id, e, exc_info=True)
 
         detail = f"{total_odds} odds for {len(race_ids)} races"
-        logger.info("Odds fetch complete: %s", detail)
-        manager.record_job_run("odds", status="success", detail=detail)
+        if failed_count > 0:
+            detail += f" ({failed_count} failed)"
+
+        if failed_count == len(race_ids):
+            status = "error"
+        elif failed_count > 0:
+            status = "partial"
+        else:
+            status = "success"
+
+        logger.info("Odds fetch complete [%s]: %s", status, detail)
+        manager.record_job_run("odds", status=status, detail=detail)
 
     except Exception as e:
         logger.error("Odds fetch failed: %s", e, exc_info=True)
@@ -482,6 +513,7 @@ async def job_results(manager: SchedulerManager) -> None:
             return
 
         total_results = 0
+        failed_count = 0
         async with NetkeibaScraper(headless=True) as nk:
             for race_id in race_ids:
                 try:
@@ -489,11 +521,22 @@ async def job_results(manager: SchedulerManager) -> None:
                     count = store_result(result)
                     total_results += count
                 except Exception as e:
-                    logger.warning("Failed result for %s: %s", race_id, e)
+                    failed_count += 1
+                    logger.warning("Failed result for %s: %s", race_id, e, exc_info=True)
 
         detail = f"{total_results} results for {len(race_ids)} races"
-        logger.info("Results fetch complete: %s", detail)
-        manager.record_job_run("results", status="success", detail=detail)
+        if failed_count > 0:
+            detail += f" ({failed_count} failed)"
+
+        if failed_count == len(race_ids):
+            status = "error"
+        elif failed_count > 0:
+            status = "partial"
+        else:
+            status = "success"
+
+        logger.info("Results fetch complete [%s]: %s", status, detail)
+        manager.record_job_run("results", status=status, detail=detail)
 
     except Exception as e:
         logger.error("Results fetch failed: %s", e, exc_info=True)
