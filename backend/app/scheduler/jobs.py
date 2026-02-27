@@ -345,30 +345,100 @@ async def job_odds(manager: SchedulerManager) -> None:
 # Job: Results
 # ---------------------------------------------------------------------------
 
+def _find_predict_target_date() -> date | None:
+    """Find the best date for prediction.
+
+    Priority:
+      1. Nearest future date (today or later) with entries (stub_only=False)
+      2. Most recent past date with entries but no predictions yet
+
+    Returns None if no suitable date is found.
+    """
+    from sqlalchemy import and_, create_engine, func, select
+    from sqlalchemy.orm import Session as SyncSession
+
+    from app.models import PredictionLog, Race
+
+    today = _today_jst()
+    engine = create_engine(settings.database_url_sync)
+    try:
+        with SyncSession(engine) as session:
+            # 1. Nearest upcoming date with entries
+            upcoming = session.execute(
+                select(Race.race_date)
+                .where(
+                    and_(
+                        Race.race_date >= today,
+                        Race.stub_only == False,  # noqa: E712
+                    )
+                )
+                .order_by(Race.race_date)
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if upcoming:
+                return upcoming
+
+            # 2. Most recent past date with entries but no predictions
+            pred_subq = (
+                select(func.count(PredictionLog.id))
+                .where(PredictionLog.race_id == Race.id)
+                .correlate(Race)
+                .scalar_subquery()
+            )
+            past_unpredicted = session.execute(
+                select(Race.race_date)
+                .where(
+                    and_(
+                        Race.stub_only == False,  # noqa: E712
+                        pred_subq == 0,
+                    )
+                )
+                .order_by(Race.race_date.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+
+            return past_unpredicted
+    finally:
+        engine.dispose()
+
+
 async def job_predict(manager: SchedulerManager) -> None:
-    """Generate AI predictions for tomorrow's races."""
+    """Generate AI predictions for upcoming races.
+
+    Auto-detects the nearest race date (today or later) that has entries.
+    Falls back to tomorrow if no upcoming race date is found in the DB.
+    """
     logger.info("=== Job: Prediction starting ===")
     try:
         from app.ml.predictor import predict_race
 
-        tomorrow = _today_jst() + timedelta(days=1)
+        target_date = _find_predict_target_date()
+        if target_date is None:
+            logger.info("No races with entries found for prediction")
+            manager.record_job_run(
+                "predict", status="skipped", detail="No races with entries found"
+            )
+            return
+
+        logger.info("Prediction target date: %s", target_date)
         model_version = settings.SCHED_PREDICT_MODEL_VERSION
 
         results = await asyncio.to_thread(
             predict_race,
             version=model_version,
-            target_date=tomorrow,
+            target_date=target_date,
             save_to_db=True,
         )
 
         if not results:
             manager.record_job_run(
-                "predict", status="skipped", detail=f"No races on {tomorrow}"
+                "predict", status="skipped", detail=f"No races on {target_date}"
             )
             return
 
         unique_races = len({r["race_id_str"] for r in results})
-        detail = f"{len(results)} predictions across {unique_races} races ({tomorrow})"
+        detail = f"{len(results)} predictions across {unique_races} races ({target_date})"
         logger.info("Prediction complete: %s", detail)
         manager.record_job_run("predict", status="success", detail=detail)
 
@@ -382,17 +452,30 @@ async def job_predict(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 
 async def job_results(manager: SchedulerManager) -> None:
-    """Fetch results for today's races that don't have results yet."""
+    """Fetch results for today's and recent past races that don't have results yet.
+
+    Checks today and the past 3 days to catch results that were missed
+    (e.g., due to delayed posting on netkeiba or server downtime).
+    """
     logger.info("=== Job: Results fetch starting ===")
     try:
         from app.scraper.netkeiba import NetkeibaScraper
         from app.scraper.store import get_races_needing_results, store_result
 
         today = _today_jst()
-        race_ids = get_races_needing_results(today)
+        # Check today + past 3 days for uncollected results
+        target_dates = [today - timedelta(days=i) for i in range(4)]
+
+        all_race_ids: list[str] = []
+        for d in target_dates:
+            ids = get_races_needing_results(d)
+            all_race_ids.extend(ids)
+
+        # Deduplicate while preserving order
+        race_ids = list(dict.fromkeys(all_race_ids))
 
         if not race_ids:
-            logger.info("No races needing results today, skipping")
+            logger.info("No races needing results, skipping")
             manager.record_job_run(
                 "results", status="skipped", detail="No races needing results"
             )
@@ -421,16 +504,61 @@ async def job_results(manager: SchedulerManager) -> None:
 # Job: Notify prediction
 # ---------------------------------------------------------------------------
 
+def _find_latest_predicted_date() -> date | None:
+    """Find the most recent date that has predictions in the DB.
+
+    Priority:
+      1. Nearest future date (today or later) with predictions
+      2. Most recent past date with predictions
+    """
+    from sqlalchemy import and_, create_engine, select
+
+    from app.models import PredictionLog, Race
+
+    today = _today_jst()
+    engine = create_engine(settings.database_url_sync)
+    try:
+        from sqlalchemy.orm import Session as SyncSession
+
+        with SyncSession(engine) as session:
+            # 1. Nearest upcoming date with predictions
+            upcoming = session.execute(
+                select(Race.race_date)
+                .join(PredictionLog, PredictionLog.race_id == Race.id)
+                .where(Race.race_date >= today)
+                .order_by(Race.race_date)
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if upcoming:
+                return upcoming
+
+            # 2. Most recent past date with predictions
+            past = session.execute(
+                select(Race.race_date)
+                .join(PredictionLog, PredictionLog.race_id == Race.id)
+                .order_by(Race.race_date.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+
+            return past
+    finally:
+        engine.dispose()
+
+
 async def job_notify_prediction(manager: SchedulerManager) -> None:
-    """Send LINE notification with tomorrow's AI prediction summary."""
+    """Send LINE notification with the latest AI prediction summary.
+
+    Finds the nearest date that has predictions (generated by job_predict).
+    """
     logger.info("=== Job: Notify prediction starting ===")
     try:
-        from sqlalchemy import select
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+        from sqlalchemy import and_, select
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-        from app.models.prediction import PredictionLog
         from app.models.entry import RaceEntry
         from app.models.horse import Horse
+        from app.models.prediction import PredictionLog
         from app.models.race import Race
         from app.services.notification_service import get_notification_service
 
@@ -442,27 +570,43 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
             )
             return
 
-        tomorrow = _today_jst() + timedelta(days=1)
+        # Find the nearest date that has predictions
+        target_date = await asyncio.to_thread(_find_latest_predicted_date)
+        if target_date is None:
+            logger.info("No predictions found in database")
+            manager.record_job_run(
+                "notify_prediction", status="skipped",
+                detail="No predictions found",
+            )
+            return
+
+        logger.info("Notify prediction target date: %s", target_date)
 
         engine = create_async_engine(settings.database_url)
         async with AsyncSession(engine) as session:
-            # Get prediction logs for tomorrow
+            # Get prediction logs joined with horse info via race_id + horse_id
             stmt = (
                 select(PredictionLog, Race, RaceEntry, Horse)
                 .join(Race, PredictionLog.race_id == Race.id)
-                .join(RaceEntry, PredictionLog.entry_id == RaceEntry.id)
-                .join(Horse, RaceEntry.horse_id == Horse.id)
-                .where(Race.race_date == tomorrow)
+                .join(
+                    RaceEntry,
+                    and_(
+                        RaceEntry.race_id == PredictionLog.race_id,
+                        RaceEntry.horse_id == PredictionLog.horse_id,
+                    ),
+                )
+                .join(Horse, PredictionLog.horse_id == Horse.id)
+                .where(Race.race_date == target_date)
                 .order_by(Race.race_id, PredictionLog.predicted_score.desc())
             )
             rows = (await session.execute(stmt)).all()
         await engine.dispose()
 
         if not rows:
-            logger.info("No predictions for %s", tomorrow)
+            logger.info("No predictions for %s", target_date)
             manager.record_job_run(
                 "notify_prediction", status="skipped",
-                detail=f"No predictions for {tomorrow}",
+                detail=f"No predictions for {target_date}",
             )
             return
 
@@ -487,7 +631,7 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
         predictions = list(races_map.values())
         sent = await svc.push_prediction_notification(predictions)
 
-        detail = f"Sent prediction for {len(predictions)} races" if sent else "Send failed"
+        detail = f"Sent prediction for {len(predictions)} races ({target_date})" if sent else "Send failed"
         status = "success" if sent else "error"
         logger.info("Notify prediction: %s", detail)
         manager.record_job_run("notify_prediction", status=status, detail=detail)

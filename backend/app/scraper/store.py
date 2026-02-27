@@ -45,8 +45,16 @@ def _racecourse_from_race_id(race_id_str: str) -> str | None:
     return None
 
 
+_engine_singleton = None
+
+
 def _get_engine():
-    return create_engine(settings.database_url_sync, echo=False)
+    global _engine_singleton
+    if _engine_singleton is None:
+        _engine_singleton = create_engine(
+            settings.database_url_sync, echo=False, pool_pre_ping=True
+        )
+    return _engine_singleton
 
 
 # ---------------------------------------------------------------------------
