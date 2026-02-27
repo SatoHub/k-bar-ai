@@ -194,20 +194,21 @@ def _save_predictions(
 ) -> None:
     """Bulk-insert predictions into prediction_logs."""
     with Session(engine) as session:
-        rows = []
+        # Deduplicate by (race_id, horse_id, model_version_id), keeping last
+        seen: dict[tuple, dict] = {}
         for r in results:
-            rows.append(
-                {
-                    "id": uuid.uuid4(),
-                    "race_id": r["race_uuid"],
-                    "horse_id": r["horse_uuid"],
-                    "model_version_id": model_version_uuid,
-                    "predicted_position": r["predicted_position"],
-                    "predicted_score": r["score"],
-                    "explanation": r["explanation"],
-                    "confidence": r["confidence"],
-                }
-            )
+            key = (str(r["race_uuid"]), str(r["horse_uuid"]), str(model_version_uuid))
+            seen[key] = {
+                "id": uuid.uuid4(),
+                "race_id": r["race_uuid"],
+                "horse_id": r["horse_uuid"],
+                "model_version_id": model_version_uuid,
+                "predicted_position": r["predicted_position"],
+                "predicted_score": r["score"],
+                "explanation": r["explanation"],
+                "confidence": r["confidence"],
+            }
+        rows = list(seen.values())
 
         if rows:
             stmt = pg_insert(PredictionLog.__table__).values(rows)
@@ -224,4 +225,4 @@ def _save_predictions(
             )
             session.execute(stmt)
             session.commit()
-            logger.info("Saved %d predictions to DB", len(rows))
+            logger.info("Saved %d predictions to DB (deduped from %d)", len(rows), len(results))
