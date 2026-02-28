@@ -248,6 +248,7 @@ async def job_shutuba(manager: SchedulerManager) -> None:
     try:
         from app.scraper.netkeiba import NetkeibaScraper
         from app.scraper.store import (
+            cleanup_scratched_entries,
             get_races_with_incomplete_entries,
             get_races_without_entries,
             store_shutuba,
@@ -325,6 +326,15 @@ async def job_shutuba(manager: SchedulerManager) -> None:
 
         logger.info("Shutuba fetch complete [%s]: %s", status, detail)
         manager.record_job_run("shutuba", status=status, detail=detail)
+
+        # Cleanup: remove scratched/cancelled entries with null post_position
+        for target_date in target_dates:
+            cleaned = cleanup_scratched_entries(target_date)
+            if cleaned > 0:
+                logger.info(
+                    "Cleaned %d scratched entries for %s",
+                    cleaned, target_date,
+                )
 
         # Verification: check for remaining races without entries
         remaining_ids = []
@@ -1050,7 +1060,12 @@ async def job_data_integrity_check(manager: SchedulerManager) -> None:
             if races_without_preds > 0:
                 problems.append(f"{races_without_preds}/{total_races}レースでAI予想なし")
 
-            # 5. Entries with null post_position (ghost entries)
+            # 5. Cleanup + check entries with null post_position (ghost entries)
+            from app.scraper.store import cleanup_scratched_entries
+            cleaned = cleanup_scratched_entries(today)
+            if cleaned > 0:
+                logger.info("Integrity check cleaned %d ghost entries", cleaned)
+
             ghost_entries = session.execute(
                 select(func.count(RaceEntry.id))
                 .join(Race, RaceEntry.race_id == Race.id)

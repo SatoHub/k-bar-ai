@@ -318,6 +318,57 @@ def get_races_with_incomplete_entries(target_date: datetime.date) -> list[str]:
         return [r[0] for r in rows]
 
 
+def cleanup_scratched_entries(target_date: datetime.date) -> int:
+    """Remove ghost entries (scratched/cancelled horses with null post_position).
+
+    Also updates head_count on each affected race to match remaining entries.
+    Returns number of entries deleted.
+    """
+    engine = _get_engine()
+    with Session(engine) as session:
+        from sqlalchemy import func
+
+        # Find races for the date
+        race_rows = session.execute(
+            select(Race.id).where(Race.race_date == target_date)
+        ).all()
+        race_uuids = [r[0] for r in race_rows]
+
+        if not race_uuids:
+            return 0
+
+        # Delete entries with null post_position
+        result = session.execute(
+            delete(RaceEntry).where(
+                RaceEntry.race_id.in_(race_uuids),
+                RaceEntry.post_position.is_(None),
+            )
+        )
+        deleted = result.rowcount
+
+        if deleted > 0:
+            # Update head_count on affected races
+            for race_uuid in race_uuids:
+                count = session.execute(
+                    select(func.count(RaceEntry.id)).where(
+                        RaceEntry.race_id == race_uuid
+                    )
+                ).scalar() or 0
+                session.execute(
+                    update(Race)
+                    .where(Race.id == race_uuid)
+                    .values(head_count=count)
+                )
+
+            session.commit()
+            logger.info(
+                "Cleaned up %d scratched entries for %s",
+                deleted, target_date.isoformat(),
+            )
+
+        return deleted
+
+
 def get_races_needing_results(target_date: datetime.date) -> list[str]:
     """Get race_ids for a date that have entries but no finish results yet."""
     engine = _get_engine()
