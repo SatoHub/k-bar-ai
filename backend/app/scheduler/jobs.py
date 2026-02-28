@@ -183,10 +183,20 @@ def register_jobs(
         replace_existing=True,
     )
 
+    # 10. Data integrity check: daily at 10:00 JST (after morning shutuba + predict)
+    scheduler.add_job(
+        job_data_integrity_check,
+        CronTrigger(hour=10, minute=0, timezone=tz),
+        id="data_integrity",
+        name="データ整合性チェック",
+        kwargs={"manager": manager},
+        replace_existing=True,
+    )
+
     # TODO: 3-month summary job (enable via SCHED_QUARTERLY_SUMMARY_ENABLED)
     # TODO: JRA-VAN reminder (trigger at JRAVAN_REMINDER_MONTH)
 
-    logger.info("Registered 10 scheduler jobs")
+    logger.info("Registered 11 scheduler jobs")
 
 
 # ---------------------------------------------------------------------------
@@ -357,10 +367,14 @@ async def job_odds(manager: SchedulerManager) -> None:
 
         total_odds = 0
         failed_count = 0
+        empty_count = 0
         async with NetkeibaScraper(headless=True) as nk:
             for race_id in race_ids:
                 try:
                     odds = await nk.scrape_odds(race_id)
+                    if not odds:
+                        empty_count += 1
+                        logger.info("Empty odds for %s (API may have returned non-result status)", race_id)
                     count = store_odds(odds, race_id)
                     total_odds += count
                 except Exception as e:
@@ -370,10 +384,14 @@ async def job_odds(manager: SchedulerManager) -> None:
         detail = f"{total_odds} odds for {len(race_ids)} races"
         if failed_count > 0:
             detail += f" ({failed_count} failed)"
+        if empty_count > 0:
+            detail += f" ({empty_count} empty)"
 
         if failed_count == len(race_ids):
             status = "error"
         elif failed_count > 0:
+            status = "partial"
+        elif empty_count > len(race_ids) // 2:
             status = "partial"
         else:
             status = "success"
@@ -950,3 +968,117 @@ async def job_monthly_proposal(manager: SchedulerManager) -> None:
     except Exception as e:
         logger.error("Monthly proposal failed: %s", e, exc_info=True)
         manager.record_job_run("monthly_proposal", status="error", detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Job: Data integrity check
+# ---------------------------------------------------------------------------
+
+async def job_data_integrity_check(manager: SchedulerManager) -> None:
+    """Check data completeness for today's races and log warnings.
+
+    Runs after morning shutuba + predict jobs to verify:
+    1. All races have entries (not stub_only)
+    2. Entry count matches head_count (no duplicates)
+    3. All races have AI predictions
+    4. Model file exists on disk
+    """
+    logger.info("=== Job: Data integrity check starting ===")
+    try:
+        from pathlib import Path
+
+        from sqlalchemy import func, select
+        from sqlalchemy.orm import Session as SyncSession
+
+        from app.ml.config import MODELS_DIR
+        from app.models import PredictionLog, Race, RaceEntry
+
+        today = _today_jst()
+        engine = __import__("sqlalchemy").create_engine(settings.database_url_sync)
+
+        problems: list[str] = []
+
+        with SyncSession(engine) as session:
+            # 1. Count races for today
+            total_races = session.execute(
+                select(func.count(Race.id)).where(Race.race_date == today)
+            ).scalar() or 0
+
+            if total_races == 0:
+                logger.info("No races today, skipping integrity check")
+                manager.record_job_run(
+                    "data_integrity", status="skipped", detail="No races today"
+                )
+                engine.dispose()
+                return
+
+            # 2. Stub-only races (entries not fetched)
+            stub_count = session.execute(
+                select(func.count(Race.id)).where(
+                    Race.race_date == today, Race.stub_only == True  # noqa: E712
+                )
+            ).scalar() or 0
+            if stub_count > 0:
+                problems.append(f"{stub_count}レースで出馬表未取得(stub_only)")
+
+            # 3. Entry count vs head_count mismatch
+            mismatch_races = session.execute(
+                select(Race.race_id, Race.racecourse_name, Race.race_number,
+                       Race.head_count, func.count(RaceEntry.id).label("entry_count"))
+                .outerjoin(RaceEntry, RaceEntry.race_id == Race.id)
+                .where(Race.race_date == today, Race.head_count.isnot(None))
+                .group_by(Race.id)
+                .having(func.count(RaceEntry.id) != Race.head_count)
+            ).all()
+            if mismatch_races:
+                problems.append(
+                    f"{len(mismatch_races)}レースでentries≠head_count"
+                )
+                for r in mismatch_races[:5]:
+                    logger.warning(
+                        "Entry mismatch: %s %sR entries=%d head_count=%d",
+                        r.racecourse_name, r.race_number, r.entry_count, r.head_count,
+                    )
+
+            # 4. Races without predictions
+            races_with_preds = session.execute(
+                select(func.count(func.distinct(PredictionLog.race_id)))
+                .join(Race, PredictionLog.race_id == Race.id)
+                .where(Race.race_date == today)
+            ).scalar() or 0
+            races_without_preds = total_races - races_with_preds
+            if races_without_preds > 0:
+                problems.append(f"{races_without_preds}/{total_races}レースでAI予想なし")
+
+            # 5. Entries with null post_position (ghost entries)
+            ghost_entries = session.execute(
+                select(func.count(RaceEntry.id))
+                .join(Race, RaceEntry.race_id == Race.id)
+                .where(Race.race_date == today, RaceEntry.post_position.is_(None))
+            ).scalar() or 0
+            if ghost_entries > 0:
+                problems.append(f"馬番なしエントリ{ghost_entries}件（重複の可能性）")
+
+        # 6. Model file check
+        model_version = settings.SCHED_PREDICT_MODEL_VERSION
+        model_path = MODELS_DIR / f"{model_version}.joblib"
+        if not model_path.exists():
+            problems.append(f"モデルファイル未検出: {model_path}")
+
+        engine.dispose()
+
+        # Build report
+        if problems:
+            detail = f"{total_races}R, 問題{len(problems)}件: " + "; ".join(problems)
+            status = "error"
+            logger.error("Data integrity issues found: %s", detail)
+        else:
+            detail = f"{total_races}R, 全チェックOK (entries={races_with_preds} preds)"
+            status = "success"
+            logger.info("Data integrity check passed: %s", detail)
+
+        manager.record_job_run("data_integrity", status=status, detail=detail)
+
+    except Exception as e:
+        logger.error("Data integrity check failed: %s", e, exc_info=True)
+        manager.record_job_run("data_integrity", status="error", detail=str(e))

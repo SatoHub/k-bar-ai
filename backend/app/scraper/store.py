@@ -13,7 +13,7 @@ import uuid
 
 import re
 
-from sqlalchemy import and_, create_engine, select, update
+from sqlalchemy import and_, create_engine, delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -366,17 +366,27 @@ def store_shutuba(shutuba_data: dict, race_date: datetime.date) -> int:
             # Upsert race
             race_uuid = _upsert_race(session, shutuba_data, race_date)
 
-            # Upsert entries
+            # Upsert entries — track horse_ids seen in this shutuba
+            current_horse_ids: set[uuid.UUID] = set()
             count = 0
             for entry in entries:
                 horse_name = entry.get("horse_name")
                 if not horse_name:
                     continue
 
+                # Skip entries without post_position (scratched / cancelled)
+                if entry.get("post_position") is None:
+                    logger.debug(
+                        "Skipping entry without post_position: %s (%s)",
+                        horse_name, race_id_str,
+                    )
+                    continue
+
                 sex = entry.get("sex")
                 horse_uuid = _upsert_horse(
                     session, horse_name, sex, entry.get("horse_netkeiba_id")
                 )
+                current_horse_ids.add(horse_uuid)
 
                 jockey_uuid = None
                 if entry.get("jockey_name"):
@@ -417,6 +427,28 @@ def store_shutuba(shutuba_data: dict, race_date: datetime.date) -> int:
                 )
                 session.execute(stmt)
                 count += 1
+
+            # Remove entries for scratched / cancelled horses
+            # (horses in DB but no longer in the current shutuba)
+            if current_horse_ids:
+                deleted = session.execute(
+                    delete(RaceEntry).where(
+                        RaceEntry.race_id == race_uuid,
+                        ~RaceEntry.horse_id.in_(current_horse_ids),
+                    )
+                )
+                if deleted.rowcount > 0:
+                    logger.info(
+                        "Removed %d scratched entries from %s",
+                        deleted.rowcount, race_id_str,
+                    )
+
+                # Update head_count on the race to match actual entries
+                session.execute(
+                    update(Race)
+                    .where(Race.id == race_uuid)
+                    .values(head_count=count)
+                )
 
             _log_finish(session, log_id, "success", count)
             session.commit()

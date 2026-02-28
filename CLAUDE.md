@@ -18,7 +18,17 @@ cd backend && uv run uvicorn app.main:app --reload --port 8000 &
 cd frontend && npm run dev &
 ```
 
-起動後、`docs/progress.md` を確認して前回の作業状況を把握すること。
+起動後、以下を順に実行すること:
+
+1. **本番環境ヘルスチェック** — Playwrightで本番VPSのデータ・UI状態を自動検証する
+```bash
+cd frontend && npx playwright test e2e/production-health-check.spec.ts --project=PC --reporter=list
+```
+- テスト結果をユーザーに要約して報告すること（全パス / 失敗テストの一覧）
+- 失敗がある場合は `docs/20260228-bug-registry.md` と照合し、既知バグの再発か新規バグかを判断する
+- スクリーンショットは `frontend/e2e/screenshots/health-*.png` に保存される
+
+2. `docs/progress.md` を確認して前回の作業状況を把握すること
 
 ## プロジェクト構成
 
@@ -36,3 +46,4 @@ cd frontend && npm run dev &
 | `make scrape-odds date=YYYY-MM-DD` | オッズスクレイピング |
 | `make predict version=v1.0.0 date=YYYY-MM-DD` | AI予想実行 |
 | `make test` | バックエンドテスト |
+| `cd frontend && npx playwright test e2e/production-health-check.spec.ts --project=PC` | 本番ヘルスチェック |

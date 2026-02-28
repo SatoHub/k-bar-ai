@@ -26,6 +26,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ../backend/models:/app/models:ro
     environment:
       APP_ENV: production
       UVICORN_WORKERS: "1"

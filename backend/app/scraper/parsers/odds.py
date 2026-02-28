@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Accepted API status values:
+#   "result" = confirmed odds (after race finalized)
+#   "middle" = interim odds (during betting, before race start)
+#   "yoso"   = forecast odds (day-before estimates, lower accuracy)
+_ACCEPTED_STATUSES = {"result", "middle", "yoso"}
 
 # Mapping from our bet_type to netkeiba API type param and response key
 NETKEIBA_ODDS_TYPE_MAP: dict[str, dict] = {
@@ -28,7 +37,9 @@ def parse_combo_odds(data: dict, bet_type: str, selections: list[int]) -> float 
     Returns:
         The odds value as float, or None if not found.
     """
-    if data.get("status") != "result":
+    status = data.get("status")
+    if status not in _ACCEPTED_STATUSES:
+        logger.debug("Combo odds: skipping status=%s", status)
         return None
 
     type_info = NETKEIBA_ODDS_TYPE_MAP.get(bet_type)
@@ -78,7 +89,7 @@ def parse_odds_json(data: dict, race_id: str) -> list[dict]:
 
     The API endpoint returns JSON like:
     {
-        "status": "result",
+        "status": "result" | "middle" | "yoso",
         "data": {
             "official_datetime": "2025-06-01 15:52:10",
             "odds": {
@@ -104,8 +115,13 @@ def parse_odds_json(data: dict, race_id: str) -> list[dict]:
     """
     results: list[dict] = []
 
-    if data.get("status") != "result":
+    status = data.get("status")
+    if status not in _ACCEPTED_STATUSES:
+        logger.warning("Odds API returned unexpected status=%s for %s", status, race_id)
         return results
+
+    if status != "result":
+        logger.info("Odds %s: using %s odds (not yet confirmed)", race_id, status)
 
     odds_data = data.get("data", {}).get("odds", {})
     win_odds = odds_data.get("1", {})  # Key "1" = 単勝

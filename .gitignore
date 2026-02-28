@@ -33,8 +33,9 @@ coverage/
 htmlcov/
 .coverage
 
-# ML models
-backend/models/
+# ML models (keep .joblib tracked for deployment)
+backend/models/*.tmp
+backend/models/*.bak
 
 # Alembic
 *.pyc
