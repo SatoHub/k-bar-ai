@@ -202,6 +202,55 @@ def _compute_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
     tc_win_shifted = tc_grouped["is_win"].shift(1)
     df["trainer_course_win_rate"] = tc_win_shifted.expanding(min_periods=1).mean()
 
+    # Trainer × distance band (short/mile/mid/long)
+    df["distance_band"] = pd.cut(
+        df["distance_m"],
+        bins=[0, 1400, 1800, 2200, 9999],
+        labels=["short", "mile", "mid", "long"],
+    )
+    df = df.sort_values(["trainer_uuid", "distance_band", "race_date", "race_id_str"])
+    td_grouped = df.groupby(["trainer_uuid", "distance_band"], observed=True)
+    td_win_shifted = td_grouped["is_win"].shift(1)
+    df["trainer_distance_win_rate"] = td_win_shifted.expanding(min_periods=1).mean()
+    df.drop(columns=["distance_band"], inplace=True)
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Horse × surface / track condition statistics
+# ---------------------------------------------------------------------------
+
+
+def _compute_horse_surface_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute per-horse stats grouped by surface (芝/ダート)."""
+    df = df.sort_values(["horse_uuid", "surface", "race_date", "race_id_str"]).copy()
+    hs_grouped = df.groupby(["horse_uuid", "surface"], observed=True)
+
+    win_shifted = hs_grouped["is_win"].shift(1)
+    place_shifted = hs_grouped["is_place"].shift(1)
+    finish_shifted = hs_grouped["finish_position"].shift(1)
+
+    df["horse_surface_win_rate"] = win_shifted.expanding(min_periods=1).mean()
+    df["horse_surface_place_rate"] = place_shifted.expanding(min_periods=1).mean()
+    df["horse_surface_avg_finish"] = finish_shifted.rolling(5, min_periods=1).mean()
+
+    return df
+
+
+def _compute_horse_track_condition_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute per-horse stats grouped by track condition (良/稍/重/不良)."""
+    df = df.sort_values(
+        ["horse_uuid", "track_condition", "race_date", "race_id_str"]
+    ).copy()
+    htc_grouped = df.groupby(["horse_uuid", "track_condition"], observed=True)
+
+    win_shifted = htc_grouped["is_win"].shift(1)
+    finish_shifted = htc_grouped["finish_position"].shift(1)
+
+    df["horse_track_cond_win_rate"] = win_shifted.expanding(min_periods=1).mean()
+    df["horse_track_cond_avg_finish"] = finish_shifted.rolling(5, min_periods=1).mean()
+
     return df
 
 
@@ -274,6 +323,10 @@ def build_feature_matrix(
     df = _compute_jockey_stats(df)
     logger.info("Computing trainer stats...")
     df = _compute_trainer_stats(df)
+    logger.info("Computing horse surface stats...")
+    df = _compute_horse_surface_stats(df)
+    logger.info("Computing horse track condition stats...")
+    df = _compute_horse_track_condition_stats(df)
     logger.info("Computing horse condition features...")
     df = _compute_horse_condition_features(df)
     logger.info("Encoding categorical features...")

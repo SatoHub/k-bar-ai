@@ -30,6 +30,14 @@ FEATURE_COLUMNS = [
     "trainer_win_rate",
     "trainer_place_rate",
     "trainer_course_win_rate",
+    "trainer_distance_win_rate",
+    # Horse × surface stats
+    "horse_surface_win_rate",
+    "horse_surface_place_rate",
+    "horse_surface_avg_finish",
+    # Horse × track condition stats
+    "horse_track_cond_win_rate",
+    "horse_track_cond_avg_finish",
     # Horse condition
     "days_since_last_race",
     "cumulative_prize",
@@ -99,6 +107,12 @@ FEATURE_LABEL_JA = {
     "trainer_win_rate": "調教師の通算勝率",
     "trainer_place_rate": "調教師の通算複勝率",
     "trainer_course_win_rate": "調教師の当コース勝率",
+    "trainer_distance_win_rate": "調教師の当距離帯勝率",
+    "horse_surface_win_rate": "同馬場（芝/ダ）勝率",
+    "horse_surface_place_rate": "同馬場（芝/ダ）複勝率",
+    "horse_surface_avg_finish": "同馬場（芝/ダ）平均着順",
+    "horse_track_cond_win_rate": "同馬場状態の勝率",
+    "horse_track_cond_avg_finish": "同馬場状態の平均着順",
     "days_since_last_race": "前走からの間隔日数",
     "cumulative_prize": "通算賞金",
     "race_count": "通算出走回数",
