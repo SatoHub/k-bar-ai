@@ -5,3 +5,8 @@
 dl/
 save/
 *.jvd
+
+# 32bit Python仮想環境・キャッシュ
+.venv32/
+.venv/
+__pycache__/

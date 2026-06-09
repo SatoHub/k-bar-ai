@@ -35,7 +35,11 @@
   - 結論: JV-LinkはWindows/COM専用 → 方式C（自宅PC週1同期）が必然。Data Lab.月2,090円。`miyamamoto/jrvltsql`(Apache-2.0)が要件に最も近い第一候補
 - [x] **Step E リマインダー:** `job_jravan_reminder` 実装（週次LINE通知、`jobs.py`）
   - `SCHED_JRAVAN_REMINDER_ENABLED`(既定False)で制御。契約後に有効化 → 金9:00に同期リマインダー送信
-- [ ] **Step D 本実装:** 自宅Windows PCにJV-Link取得バッチ構築（jrvltsql評価 → ステージングDB → 本番差分連携）。JRA-VAN契約・利用キー取得が前提
+- [x] **Step D 契約・JV-Link導入・疎通成功（2026-06-09）**
+  - Data Lab.契約済み・利用キー取得済み・JV-Link(`C:\Program Files (x86)\JRA-VAN\Data Lab`)インストール済み
+  - 自宅PCに32bit Python(3.12-32)+pywin32環境を構築 → `backend/jravan/connect_test.py` で疎通成功
+  - `JVOpen rc=0` で認証OK、実データ(type=JG等)取得を確認。利用キーは`.env`管理(gitignore)
+- [ ] **Step D 本実装(次):** `jrvltsql` で初回フルセットアップ → PostgreSQL(`kbar_jravan`)化 → 本番VPS差分連携・ID突合
 
 ### 次にやること
 - [ ] v1.1.0 の本番予想精度を v1.0.0 と比較・検証
