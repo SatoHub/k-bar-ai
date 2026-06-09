@@ -1,6 +1,57 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-09（本番安定化・v1.1.0再学習の作業を反映）
+**最終更新:** 2026-06-09（JRA-VAN接続 完全成功 / 次回はjrvltsqlで本格DB化）
+
+---
+
+## 🔵 次回セッション開始ガイド（RESUME HERE）
+
+### いまどこ？
+**JRA-VAN接続をゼロから完成させた。** 契約→利用キー→JV-Linkインストール→32bit Python環境→
+**実データ取得まで成功済み**（`backend/jravan/connect_test.py` で `JVOpen rc=0` 確認）。
+> 目的: 普段のnetkeibaスクレイピングに加え、JRA-VANの正確なデータ（レース/オッズ/馬場）で精度補強する。
+
+### 次にやること = jrvltsql で本格DB化（データ・オッズ取得の本番化）
+`miyamamoto/jrvltsql`（JV-Link→DB化ツール）を使い、JRA-VANデータをDBに溜める。
+手順書: `backend/jravan/jrvltsql-setup.md`
+
+**推奨の進め方（安全策）:**
+1. まず **SQLite + 直近1ヶ月** で動作確認（jrvltsqlのパイプラインが通るか）
+   ```powershell
+   # 32bit venvを有効化してから
+   cd C:\Users\unoen\projects\k-bar-ai\backend\jravan
+   .\.venv32\Scripts\Activate.ps1
+   # jrvltsqlをclone & install（初回のみ）
+   git clone https://github.com/miyamamoto/jrvltsql.git
+   cd jrvltsql; pip install -e .
+   quickstart_timeseries.bat --db sqlite --from 20260509 --to 20260609
+   ```
+2. OKなら **本番 PostgreSQL でフルセットアップ**（`kbar-postgres` が localhost:5432 で稼働中）
+   ```sql
+   CREATE DATABASE kbar_jravan;
+   ```
+   ```powershell
+   $env:POSTGRES_HOST="127.0.0.1"; $env:POSTGRES_PORT="5432"
+   $env:POSTGRES_DATABASE="kbar_jravan"; $env:POSTGRES_USER="..."; $env:POSTGRES_PASSWORD="..."
+   quickstart_timeseries.bat --db postgresql --from 20210101 --to 20260609
+   ```
+   → オッズは `NL_O1`〜`NL_O6`（確定）/ `TS_O1`,`TS_O2`（時系列）/ `TS_SOKUHO_O1`〜（速報）に入る
+3. 日次同期 `daily_sync.bat --db postgresql` をWindowsタスクスケジューラ登録
+
+### 開始時に決める2点
+- **取得期間**: Kaggleが1986〜2021 → 空白の **2021〜2026** を埋めるのが有力
+- **保存先**: `kbar-postgres`（localhost:5432）内に専用DB **`kbar_jravan`**（アプリDBと分離）
+
+### 環境メモ（再起動後そのまま使える）
+- JV-Link: `C:\Program Files (x86)\JRA-VAN\Data Lab`（キー登録済み・要件OK）
+- 32bit Python: `py -3.12-32`、venv: `backend/jravan/.venv32`（pywin32導入済み）
+- 利用キー: `backend/jravan/.env`（gitignore済み・`JRAVAN_SERVICE_KEY`）
+- 疎通再確認: `& backend\jravan\.venv32\Scripts\python.exe -u backend\jravan\connect_test.py`
+- ⚠️ JV-Linkは**32bit Pythonでのみ**呼べる（`python`直打ちはStoreスタブに注意、`py`を使う）
+
+### この先の最終ゴール（連携）
+ステージング(`kbar_jravan`) → 本番VPSへ差分連携 → netkeibaデータとID突合 → 学習特徴量に追加（Step 6と合流）。
+当日リアルタイムのオッズ/馬場は引き続きnetkeiba（VPS完結）、JRA-VANは正確な確定・過去データ補強が役割。
 
 ---
 
