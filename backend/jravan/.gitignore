@@ -1,0 +1,7 @@
+# JV-Link 利用キー（秘密情報）
+.env
+
+# JV-Link ダウンロード/保存データ
+dl/
+save/
+*.jvd

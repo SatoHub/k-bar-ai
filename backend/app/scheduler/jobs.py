@@ -193,10 +193,30 @@ def register_jobs(
         replace_existing=True,
     )
 
-    # TODO: 3-month summary job (enable via SCHED_QUARTERLY_SUMMARY_ENABLED)
-    # TODO: JRA-VAN reminder (trigger at JRAVAN_REMINDER_MONTH)
+    job_count = 12
 
-    logger.info("Registered 11 scheduler jobs")
+    # 11. JRA-VAN sync reminder: weekly (only when enabled).
+    # Reminds the user to run the home-PC JV-Link sync (方式C).
+    # See docs/20260609-jravan-connection.md
+    if settings.SCHED_JRAVAN_REMINDER_ENABLED:
+        scheduler.add_job(
+            job_jravan_reminder,
+            CronTrigger(
+                day_of_week=settings.SCHED_JRAVAN_REMINDER_DAY_OF_WEEK,
+                hour=settings.SCHED_JRAVAN_REMINDER_HOUR,
+                minute=settings.SCHED_JRAVAN_REMINDER_MINUTE,
+                timezone=tz,
+            ),
+            id="jravan_reminder",
+            name="JRA-VAN同期リマインダー",
+            kwargs={"manager": manager},
+            replace_existing=True,
+        )
+        job_count += 1
+
+    # TODO: 3-month summary job (enable via SCHED_QUARTERLY_SUMMARY_ENABLED)
+
+    logger.info("Registered %d scheduler jobs", job_count)
 
 
 # ---------------------------------------------------------------------------
@@ -1097,3 +1117,51 @@ async def job_data_integrity_check(manager: SchedulerManager) -> None:
     except Exception as e:
         logger.error("Data integrity check failed: %s", e, exc_info=True)
         manager.record_job_run("data_integrity", status="error", detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Job: JRA-VAN sync reminder (方式C: weekly home-PC JV-Link sync)
+# ---------------------------------------------------------------------------
+
+async def job_jravan_reminder(manager: SchedulerManager) -> None:
+    """Send a weekly LINE reminder to run the home-PC JRA-VAN (JV-Link) sync.
+
+    JV-Link is Windows/COM-only, so the sync runs on the user's home PC rather
+    than the Linux VPS. This job only nudges the user; it does not fetch data.
+    See docs/20260609-jravan-connection.md.
+    """
+    logger.info("=== Job: JRA-VAN reminder starting ===")
+    try:
+        from app.services.notification_service import get_notification_service
+
+        svc = get_notification_service()
+        if not svc.is_configured:
+            logger.info("LINE not configured, skipping jravan_reminder")
+            manager.record_job_run(
+                "jravan_reminder", status="skipped", detail="LINE not configured"
+            )
+            return
+
+        message = (
+            "🐎 JRA-VAN 週次同期のリマインダー\n"
+            "\n"
+            "今週末のレースに向けて、自宅PCでJRA-VANデータ同期を実行してください。\n"
+            "\n"
+            "▼ 手順\n"
+            "1. 自宅WindowsPCを起動\n"
+            "2. JV-Link同期バッチを実行\n"
+            "3. 完了後、本番DBへ差分を反映\n"
+            "\n"
+            "※ netkeiba自動取得は稼働中です。JRA-VANは精度補強用です。"
+        )
+
+        sent = await svc.push_text(message)
+
+        detail = "Reminder sent" if sent else "Send failed"
+        status = "success" if sent else "error"
+        logger.info("JRA-VAN reminder: %s", detail)
+        manager.record_job_run("jravan_reminder", status=status, detail=detail)
+
+    except Exception as e:
+        logger.error("JRA-VAN reminder failed: %s", e, exc_info=True)
+        manager.record_job_run("jravan_reminder", status="error", detail=str(e))

@@ -64,8 +64,13 @@ class Settings(BaseSettings):
     SCHED_MONTHLY_PROPOSAL_MINUTE: int = 0
     # Future: quarterly summary (enabled after 3 months of operation)
     SCHED_QUARTERLY_SUMMARY_ENABLED: bool = False
-    # Future: JRA-VAN reminder month (adjust based on operation start)
-    JRAVAN_REMINDER_MONTH: int = 5
+    # JRA-VAN weekly sync reminder (方式C: home Windows PC + JV-Link).
+    # Disabled by default; enable once JRA-VAN Data Lab. is contracted.
+    # See docs/20260609-jravan-connection.md
+    SCHED_JRAVAN_REMINDER_ENABLED: bool = False
+    SCHED_JRAVAN_REMINDER_DAY_OF_WEEK: str = "fri"
+    SCHED_JRAVAN_REMINDER_HOUR: int = 9
+    SCHED_JRAVAN_REMINDER_MINUTE: int = 0
 
     @property
     def database_url(self) -> str:

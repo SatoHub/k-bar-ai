@@ -30,10 +30,17 @@
 - [x] AI成績ページSP版の横オーバーフロー修正（`d7f6e89`）
 - [x] deploy.yml の git権限エラー・キャッシュ問題を解消（`06c799f`, `72f3735`, `eeeba75`）
 
+### JRA-VAN連携（Step D/E）— 着手（2026-06-09）
+- [x] **Step D 調査:** JV-Link接続方式・料金・Python連携を調査 → `docs/20260609-jravan-connection.md`
+  - 結論: JV-LinkはWindows/COM専用 → 方式C（自宅PC週1同期）が必然。Data Lab.月2,090円。`miyamamoto/jrvltsql`(Apache-2.0)が要件に最も近い第一候補
+- [x] **Step E リマインダー:** `job_jravan_reminder` 実装（週次LINE通知、`jobs.py`）
+  - `SCHED_JRAVAN_REMINDER_ENABLED`(既定False)で制御。契約後に有効化 → 金9:00に同期リマインダー送信
+- [ ] **Step D 本実装:** 自宅Windows PCにJV-Link取得バッチ構築（jrvltsql評価 → ステージングDB → 本番差分連携）。JRA-VAN契約・利用キー取得が前提
+
 ### 次にやること
 - [ ] v1.1.0 の本番予想精度を v1.0.0 と比較・検証
 - [ ] **Step 6（MLOps）本格化:** モデル自動再学習・バージョン自動切り替えの仕組み化
-- [ ] LINE通知拡張（Step 5）のpostbackボタン本番動作確認（下記参照）
+- [ ] LINE通知拡張（Step 5）のpostbackボタン本番動作確認
 
 ---
 
