@@ -9,8 +9,8 @@
 
 | バグID | 発覚日 | 概要 | 原因 | 修正ファイル | E2Eチェック項目 | ステータス |
 |--------|--------|------|------|-------------|----------------|-----------|
-| BUG-001 | 2026-02-28 | AI予想が全レースで欠落 | モデルファイル(.joblib)が`.gitignore`で除外されておりデプロイされない + Docker volumeマウント未設定 | `docker-compose.prod.yml`, `docker-entrypoint.sh` | 全レースで `/api/v1/predictions/{race_id}` が空でないこと | **修正済み** |
-| BUG-002 | 2026-02-28 | 出走馬の重複/ゴーストエントリ | 出走取消馬の削除ロジック不在。スクレイピング時に取消馬がDBに残り続ける | `backend/app/scraper/store.py` | entries数 == head_count, post_position非null, 同一race内でpost_position重複なし | **修正済み** |
+| BUG-001 | 2026-02-28 | AI予想が全レースで欠落 | (1)`.gitignore`でモデルファイル除外→VPSに届かない (2)`libgomp1`未インストール→LightGBM実行不可 | `.gitignore`, `Dockerfile.backend`, `docker-compose.prod.yml`, `docker-entrypoint.sh` | 全レースで `/api/v1/predictions/{race_id}` が空でないこと | **修正済み・デプロイ済み** |
+| BUG-002 | 2026-02-28 | 出走馬の重複/ゴーストエントリ | (1)取消馬の削除ロジック不在 (2)再スクレイピング未実行で削除ロジックが発火しない | `backend/app/scraper/store.py`, `backend/app/scheduler/jobs.py` | entries数 == head_count, post_position非null, 同一race内でpost_position重複なし | **修正済み・デプロイ済み** |
 | BUG-003 | 2026-02-28 | オッズが一部レースのみ取得 | オッズパーサーが `"middle"` / `"yoso"` ステータスのレースページを拒否していた | `backend/app/scraper/parsers/odds.py` | 全レースで `/api/v1/races/{race_id}/odds` が空でないこと | **修正済み** |
 
 ---
@@ -36,21 +36,27 @@
 3. `docker-entrypoint.sh` でモデルファイルの存在チェックがなかった
 
 **修正内容**:
+- `.gitignore`: `backend/models/`の除外を解除し、`v1.0.0.joblib`をgit管理に追加
 - `docker-compose.prod.yml`: `./backend/models:/app/models:ro` をvolumeに追加
 - `docker-entrypoint.sh`: 起動時にモデルファイルの存在を確認するヘルスチェック追加
+- `Dockerfile.backend`: `libgomp1`を追加（LightGBMのOpenMP依存）
 
 ---
 
 ### BUG-002: 出走馬の重複/ゴーストエントリ
 
-**症状**: 出馬表に出走取消馬が残り、head_countとentries数が一致しない。同一馬番が重複する場合もある。
+**症状**: 出馬表に出走取消馬が残り、head_countとentries数が一致しない。28/36レースで計159件のゴーストエントリが発生。例: オーシャンS（中山11R）でマイネルジェロディとレッドシュヴェルトがpost_position=null, bracket_number=null, jockey=nullの状態で残存。
 
 **根本原因**:
-- `store.py` のスクレイピング保存ロジックに、取消馬の削除処理がなかった
-- 再スクレイピング時にupsertのみで、不要エントリのpurgeが行われなかった
+1. `store_shutuba()`に取消馬（post_position=null）のスキップ＆削除ロジックを追加済みだったが…
+2. **再スクレイピングが実行されない**: `job_shutuba()`は`stub_only=True`または`entry_count < head_count`のレースのみ対象。既に出馬表取得済み（stub_only=False）かつentry_count >= head_countのレースは再スクレイピングされず、削除ロジックが発火しなかった
+3. 出走取消前にスクレイプされた馬はpost_position付きでDBに保存され、取消後もDBに残り続けた
 
 **修正内容**:
-- `store.py`: スクレイピング結果に含まれない既存エントリを削除するロジック追加
+- `store.py`: `cleanup_scratched_entries()` — null post_positionのエントリを直接削除しhead_count更新
+- `jobs.py`: `job_shutuba`完了後に各日付でクリーンアップ実行
+- `jobs.py`: `job_data_integrity_check`（10:00 JST）でもクリーンアップ実行
+- 初回デプロイ時に63件のゴーストエントリを削除完了
 
 ---
 
