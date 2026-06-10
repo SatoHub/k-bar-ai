@@ -113,6 +113,80 @@ function calculatePayout(amount: number, odds: number): number {
   return Math.floor((amount * odds) / 100) * 100;
 }
 
+// JRA公式の枠番カラー（1白/2黒/3赤/4青/5黄/6緑/7橙/8桃）
+const WAKU_COLORS: Record<number, { bg: string; fg: string }> = {
+  1: { bg: "#f3f4f6", fg: "#111827" },
+  2: { bg: "#1f2937", fg: "#f9fafb" },
+  3: { bg: "#e0353b", fg: "#ffffff" },
+  4: { bg: "#2563eb", fg: "#ffffff" },
+  5: { bg: "#f5c518", fg: "#1a1a1a" },
+  6: { bg: "#1ea64a", fg: "#ffffff" },
+  7: { bg: "#f08a24", fg: "#1a1a1a" },
+  8: { bg: "#ec6f9e", fg: "#1a1a1a" },
+};
+
+function wakuColor(bracket: number | null | undefined): { bg: string; fg: string } {
+  if (bracket && WAKU_COLORS[bracket]) return WAKU_COLORS[bracket];
+  return { bg: "rgba(255,255,255,0.08)", fg: "var(--text-primary)" };
+}
+
+/** 馬番を枠色バッジで表示。馬名はtitleツールチップ。 */
+function ComboBadges({
+  combo,
+  entries,
+  isWaku,
+  ordered,
+}: {
+  combo: string[];
+  entries: RaceEntry[];
+  isWaku: boolean;
+  ordered: boolean;
+}) {
+  const items = combo.map((id) => {
+    if (isWaku) {
+      const w = Number(id);
+      return { num: w, bracket: w, name: `${w}枠` };
+    }
+    const e = entries.find((en) => en.horse.id === id);
+    return {
+      num: e?.post_position ?? null,
+      bracket: e?.bracket_number ?? null,
+      name: e?.horse.name ?? id,
+    };
+  });
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-0.5 gap-y-1">
+      {items.map((it, i) => {
+        const c = wakuColor(it.bracket);
+        return (
+          <span key={i} className="inline-flex items-center">
+            {i > 0 && (
+              <span
+                className="mx-0.5 text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {ordered ? "→" : ""}
+              </span>
+            )}
+            <span
+              title={`${it.num ?? "?"} ${it.name}`}
+              className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded px-1 text-[11px] font-bold tabular-nums"
+              style={{
+                backgroundColor: c.bg,
+                color: c.fg,
+                border: "1px solid rgba(0,0,0,0.25)",
+              }}
+            >
+              {isWaku ? `${it.num}枠` : (it.num ?? "?")}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 let slotCounter = 0;
 function newSlotId(): string {
   return `slot-${++slotCounter}-${Date.now()}`;
@@ -404,12 +478,6 @@ function ComboBreakdown({
 }) {
   const count = combos.length;
 
-  function resolveLabel(id: string): string {
-    if (isWaku) return `${id}枠`;
-    const entry = entries.find((e) => e.horse.id === id);
-    return entry ? `${entry.post_position ?? "?"}${entry.horse.name}` : id;
-  }
-
   const rows = useMemo(() => {
     return combos.map((combo) => {
       const key = buildComboKey(combo, ordered, isWaku, idToPost);
@@ -419,7 +487,7 @@ function ComboBreakdown({
       const payout = odds != null && odds > 0 ? calculatePayout(amount, odds) : null;
       return {
         key,
-        label: combo.map(resolveLabel).join(ordered ? " → " : " - "),
+        combo,
         odds,
         oddsLow: entry?.odds_low ?? null,
         oddsHigh: entry?.odds_high ?? null,
@@ -490,16 +558,21 @@ function ComboBreakdown({
               return (
                 <tr
                   key={r.key ?? i}
-                  style={{ borderTop: i === 0 ? "none" : "1px solid var(--border)" }}
+                  style={{
+                    borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                    backgroundColor: i % 2 === 1 ? "rgba(255,255,255,0.02)" : "transparent",
+                  }}
                 >
-                  <td
-                    className="px-2 py-1 font-medium tabular-nums"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {r.label}
+                  <td className="px-2 py-1.5">
+                    <ComboBadges
+                      combo={r.combo}
+                      entries={entries}
+                      isWaku={isWaku}
+                      ordered={ordered}
+                    />
                   </td>
                   <td
-                    className="px-2 py-1 text-right tabular-nums"
+                    className="px-2 py-1.5 text-right tabular-nums"
                     style={{
                       color:
                         r.odds != null && r.odds <= 10
@@ -509,7 +582,7 @@ function ComboBreakdown({
                   >
                     {oddsText}
                   </td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="px-2 py-1.5 text-right">
                     <input
                       type="number"
                       min={0}
@@ -528,7 +601,7 @@ function ComboBreakdown({
                     />
                   </td>
                   <td
-                    className="px-2 py-1 text-right tabular-nums"
+                    className="px-2 py-1.5 text-right tabular-nums"
                     style={{ color: "var(--text-muted)" }}
                   >
                     {r.payout != null ? `¥${r.payout.toLocaleString()}` : "—"}
