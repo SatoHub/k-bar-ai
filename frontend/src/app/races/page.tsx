@@ -16,7 +16,6 @@ import {
   type ScrapeResponse,
 } from "@/lib/api";
 import { decodeRacecourse } from "@/lib/racecourse";
-import RaceFilters from "@/components/RaceFilters";
 import RaceCalendar from "@/components/RaceCalendar";
 import RaceTable from "@/components/RaceTable";
 import Pagination from "@/components/Pagination";
@@ -34,7 +33,6 @@ function RacesContent() {
   const [items, setItems] = useState<RaceListItem[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [page, setPage] = useState(paramPage);
-  const [racecourses, setRacecourses] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dataMaxMonth, setDataMaxMonth] = useState<string>("");
@@ -68,11 +66,10 @@ function RacesContent() {
     }
   }, [hasParams, router]);
 
-  // Fetch racecourse list + data range once
+  // Fetch data range once (for calendar default month)
   useEffect(() => {
     fetchDataStatus()
       .then((ds) => {
-        setRacecourses(ds.racecourses);
         // Default calendar to the latest month with data
         if (ds.date_max) {
           setDataMaxMonth(ds.date_max.substring(0, 7));
@@ -152,21 +149,6 @@ function RacesContent() {
     router.push(`/races?${sp.toString()}`);
   }
 
-  function handleFilter(filters: {
-    date?: string;
-    year_month?: string;
-    week?: string;
-    racecourse?: string;
-  }) {
-    updateParams({
-      date: filters.date,
-      year_month: filters.year_month,
-      week: filters.week,
-      racecourse: filters.racecourse,
-      page: undefined,
-    });
-  }
-
   function handleCalendarDayClick(dateStr: string) {
     updateParams({
       date: dateStr,
@@ -225,15 +207,6 @@ function RacesContent() {
     <>
       <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
         <div className="min-w-0 space-y-6">
-          <RaceFilters
-            racecourses={racecourses}
-            initialYearMonth={paramYearMonth}
-            initialWeek={paramWeek}
-            initialDate={paramDate}
-            initialRacecourse={paramRacecourse}
-            onFilter={handleFilter}
-          />
-
           {/* Data operation buttons */}
           <div
             className="glass-card p-4"
