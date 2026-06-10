@@ -9,8 +9,10 @@ from app.schemas.race import (
     AptitudeResponse,
     ComboOddsRequest,
     ComboOddsResponse,
+    OddsComboEntry,
     OddsHistoryResponse,
     OddsResponse,
+    OddsTableResponse,
     RaceDetail,
     RaceListResponse,
 )
@@ -131,6 +133,62 @@ async def get_combo_odds(
         bet_type=body.bet_type,
         selections=body.selections,
         odds=odds,
+    )
+
+
+@router.get("/{race_id}/odds/table", response_model=OddsTableResponse)
+async def get_odds_table(
+    race_id: str,
+    bet_type: str = Query(..., description="Bet type (tansho, umaren, sanrentan, ...)"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Fetch the full real-time odds table for one bet type (all combinations).
+
+    A single typed-odds fetch returns every combination, so the client can look
+    up any box/formation/nagashi combo locally without per-combo requests.
+    """
+    from app.scraper.parsers.odds import NETKEIBA_ODDS_TYPE_MAP
+
+    if bet_type not in NETKEIBA_ODDS_TYPE_MAP:
+        raise HTTPException(status_code=400, detail=f"Unknown bet_type: {bet_type}")
+
+    from sqlalchemy import select
+
+    from app.models import Race
+
+    result = await session.execute(select(Race).where(Race.race_id == race_id))
+    race = result.scalar_one_or_none()
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    from app.scraper.netkeiba import NetkeibaScraper
+
+    parsed: dict | None = None
+    try:
+        async with NetkeibaScraper(headless=True) as nk:
+            parsed = await nk.scrape_full_odds(race_id, bet_type)
+    except Exception:
+        parsed = None
+
+    if not parsed:
+        return OddsTableResponse(race_id=race_id, bet_type=bet_type, combos=[])
+
+    combos = [
+        OddsComboEntry(
+            combo=key,
+            odds=val.get("odds"),
+            odds_low=val.get("odds_low"),
+            odds_high=val.get("odds_high"),
+            favorite=val.get("favorite"),
+        )
+        for key, val in parsed.get("combos", {}).items()
+    ]
+    return OddsTableResponse(
+        race_id=race_id,
+        bet_type=bet_type,
+        status=parsed.get("status"),
+        official_datetime=parsed.get("official_datetime"),
+        combos=combos,
     )
 
 

@@ -8,6 +8,7 @@ from app.scraper.base import BaseScraper
 from app.scraper.parsers.odds import (
     NETKEIBA_ODDS_TYPE_MAP,
     parse_combo_odds,
+    parse_full_odds,
     parse_odds_json,
 )
 from app.scraper.parsers.race_list import parse_race_list
@@ -110,6 +111,39 @@ class NetkeibaScraper:
             "ComboOdds %s %s %s: %s", race_id, bet_type, selections, odds
         )
         return odds
+
+    async def scrape_full_odds(self, race_id: str, bet_type: str) -> dict | None:
+        """Scrape the FULL odds table for one bet type in a single request.
+
+        One typed-odds response holds every combination for the bet type, so a
+        box/formation/nagashi selection only needs one fetch per bet type; each
+        combo is then looked up locally on the client.
+
+        Args:
+            race_id: Race identifier (e.g. "202605010811").
+            bet_type: One of tansho, fukusho, wakuren, umaren, umatan, wide,
+                      sanrenpuku, sanrentan.
+
+        Returns:
+            Parsed dict from parse_full_odds (status / official_datetime /
+            combos), or None if unavailable.
+        """
+        type_info = NETKEIBA_ODDS_TYPE_MAP.get(bet_type)
+        if not type_info:
+            return None
+        url = _ODDS_API_URL_TYPED.format(
+            race_id=race_id, odds_type=type_info["api_type"]
+        )
+        await self._base._wait()
+        data = await self._base.fetch_json(url)
+        result = parse_full_odds(data, bet_type)
+        logger.info(
+            "FullOdds %s %s: %d combos",
+            race_id,
+            bet_type,
+            len(result["combos"]) if result else 0,
+        )
+        return result
 
     async def scrape_result(self, race_id: str) -> dict:
         """Scrape race result for a specific race.

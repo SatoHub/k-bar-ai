@@ -421,6 +421,32 @@ export function fetchComboOdds(
   });
 }
 
+// Full odds table for one bet type (all combinations)
+export type OddsComboEntry = {
+  combo: string; // netkeiba key, e.g. "01-02-03"
+  odds: number | null;
+  odds_low: number | null;
+  odds_high: number | null;
+  favorite: number | null;
+};
+
+export type OddsTableResponse = {
+  race_id: string;
+  bet_type: string;
+  status: string | null;
+  official_datetime: string | null;
+  combos: OddsComboEntry[];
+};
+
+export function fetchOddsTable(
+  raceId: string,
+  betType: string,
+): Promise<OddsTableResponse> {
+  return fetchJSON<OddsTableResponse>(
+    `/races/${raceId}/odds/table?bet_type=${encodeURIComponent(betType)}`,
+  );
+}
+
 // Horse detail
 export function fetchHorseDetail(horseId: string): Promise<HorseDetail> {
   return fetchJSON<HorseDetail>(`/horses/${horseId}`);

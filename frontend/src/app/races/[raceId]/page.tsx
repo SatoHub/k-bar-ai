@@ -17,6 +17,7 @@ import PredictionTable from "@/components/PredictionTable";
 import EntryTable from "@/components/EntryTable";
 import CourseInfoBadges from "@/components/CourseInfoBadges";
 import OddsChart from "@/components/OddsChart";
+import AllOddsTabs from "@/components/AllOddsTabs";
 
 export default function RaceDetailPage({
   params,
@@ -323,6 +324,11 @@ export default function RaceDetailPage({
             </table>
           </div>
         </div>
+      )}
+
+      {/* 全券種オッズ（タブ） */}
+      {race.entries.length > 0 && (
+        <AllOddsTabs raceIdStr={race.race_id} entries={race.entries} />
       )}
 
       {/* Odds history chart */}

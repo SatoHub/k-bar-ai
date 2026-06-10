@@ -84,6 +84,83 @@ def parse_combo_odds(data: dict, bet_type: str, selections: list[int]) -> float 
     return _safe_float(values[0])
 
 
+def parse_full_odds(data: dict, bet_type: str) -> dict | None:
+    """Parse netkeiba odds API JSON and return ALL combinations for a bet type.
+
+    A single typed odds API response contains every combination for that bet
+    type, so one fetch is enough to look up any box/formation/nagashi combo
+    locally.
+
+    Args:
+        data: Raw API JSON response (from the typed odds endpoint).
+        bet_type: One of tansho, fukusho, wakuren, umaren, umatan, wide,
+                  sanrenpuku, sanrentan.
+
+    Returns:
+        {
+            "status": "result"|"middle"|"yoso",
+            "official_datetime": "2026-06-01 15:52:10" | None,
+            "combos": {
+                "01-02-03": {
+                    "odds": 12.3,          # single value, or midpoint for ranges
+                    "odds_low": None,       # set for range bets (wide/fukusho)
+                    "odds_high": None,
+                    "favorite": 5,          # popularity rank, if provided
+                },
+                ...
+            },
+        }
+        or None if the response is invalid / unavailable.
+    """
+    status = data.get("status")
+    if status not in _ACCEPTED_STATUSES:
+        logger.debug("Full odds: skipping status=%s", status)
+        return None
+
+    type_info = NETKEIBA_ODDS_TYPE_MAP.get(bet_type)
+    if not type_info:
+        return None
+
+    payload = data.get("data", {})
+    odds_data = payload.get("odds", {})
+    section = odds_data.get(type_info["odds_key"], {})
+    if not isinstance(section, dict) or not section:
+        return None
+
+    combos: dict[str, dict] = {}
+    for key, values in section.items():
+        if not isinstance(values, list) or not values:
+            continue
+        odds_str = values[0]
+        odds_low: float | None = None
+        odds_high: float | None = None
+        odds_val: float | None
+        if odds_str and "-" in str(odds_str):
+            # Range odds (wide / fukusho): "1.2-1.5"
+            parts = str(odds_str).split("-")
+            odds_low = _safe_float(parts[0])
+            odds_high = _safe_float(parts[1]) if len(parts) > 1 else odds_low
+            if odds_low is not None and odds_high is not None:
+                odds_val = round((odds_low + odds_high) / 2, 1)
+            else:
+                odds_val = odds_low
+        else:
+            odds_val = _safe_float(odds_str)
+        favorite = _safe_int(values[2]) if len(values) > 2 else None
+        combos[key] = {
+            "odds": odds_val,
+            "odds_low": odds_low,
+            "odds_high": odds_high,
+            "favorite": favorite,
+        }
+
+    return {
+        "status": status,
+        "official_datetime": payload.get("official_datetime"),
+        "combos": combos,
+    }
+
+
 def parse_odds_json(data: dict, race_id: str) -> list[dict]:
     """Parse odds API JSON response into a list of odds dicts.
 

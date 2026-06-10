@@ -10,3 +10,12 @@ save/
 .venv32/
 .venv/
 __pycache__/
+
+# jrvltsql 本体（サードパーティclone・自宅PC専用、VPSデプロイ不要）
+jrvltsql/
+
+# 取得ログ・SQLite検証DB
+*.log
+*.db
+*.db-shm
+*.db-wal

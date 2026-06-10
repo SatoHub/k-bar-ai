@@ -1,6 +1,39 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-09（JRA-VAN接続 完全成功 / 次回はjrvltsqlで本格DB化）
+**最終更新:** 2026-06-10（jrvltsql導入＆検証 / 全券種オッズ・組数比較UI フェーズ1実装）
+
+---
+
+## 🟢 2026-06-10 セッション成果（最新）
+
+### A. jrvltsql 導入＆パイプライン検証（自宅PC・32bit venv）
+- ✅ `backend/jravan/jrvltsql` をclone、`.venv32`へ `pip install -e .` 済み
+- ✅ **重要修正:** `pg8000`（純Python・32bit対応PGドライバ）必須。SQLite利用時も
+  `src/database/__init__.py` がPGハンドラを無条件importするため、未導入だと
+  「テーブル作成失敗」で落ちる → `..\.venv32\Scripts\python.exe -m pip install pg8000`
+- ✅ 74テーブル作成成功。**通常データ取込は正常**（NL_RA/SE/UM/BN等 12,076件・失敗0）
+- ⚠️ **確定オッズ(NL_O1〜6)・払戻(NL_HR)は `quickstart --mode update` では入らない**
+  - 差分モードはマスタ＋出馬表のみ。**確定オッズは `fetch --spec RACE` が必要**：
+    ```powershell
+    cd backend\jravan\jrvltsql
+    ..\.venv32\Scripts\python.exe -m src.cli.main fetch --from 20260509 --to 20260609 --spec RACE --option 1 --db sqlite
+    ```
+  - O1=単複枠 / O2=馬連 / O3=ワイド(幅) / O4=馬単 / O5=三連複 / O6=三連単
+- ⚠️ `--include-timeseries`(0B41/42) は過去レース個別取得で激遅＆read_count=0が多い。
+  本番一括では使わず、確定オッズは `fetch --spec RACE` を使う方針
+
+### B. 全券種オッズ・全買い方の組数比較UI（フェーズ1・netkeiba主体）
+> 方針: 当日ライブのオッズは **netkeiba**（VPS24h・PC不要・既に8券種解析可）が主。
+> JRA-VANは過去確定・AI精度補強担当。将来フェーズ2で「PC起動時JRA-VAN速報→VPS中継、
+> 消えてればnetkeibaにフォールバック」のハイブリッド化（source列＋バッジ）。
+- ✅ backend `parse_full_odds()`（odds.py）: 券種の全組オッズを返す（ワイド幅対応）
+- ✅ backend `scrape_full_odds()`（netkeiba.py）: 券種1回で全組取得
+- ✅ backend `GET /races/{id}/odds/table?bet_type=`（races.py / schema OddsTableResponse）
+- ✅ front `BetMethodComparison.tsx` 新規: 8券種×全買い方(通常/ボックス/フォーメーション/流し)
+  の**組数比較**＋**各組オッズ一覧**（合計点数・最小/最大/平均・払戻目安）。`betCalculations`活用
+- ✅ `simulate/page.tsx` に組込み。tsc型チェック通過（既存e2eの無関係エラーのみ）
+- [ ] **フェーズ1残:** レース詳細ページの単勝のみ表示→全8券種タブ表示（task#6）
+- [ ] **フェーズ2:** JRA-VAN速報の自宅PC→VPS中継＋自動フォールバック
 
 ---
 

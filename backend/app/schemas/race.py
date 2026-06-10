@@ -139,6 +139,24 @@ class ComboOddsResponse(BaseModel):
     odds: float | None = None
 
 
+class OddsComboEntry(BaseModel):
+    combo: str  # netkeiba key, e.g. "01-02-03"
+    odds: float | None = None
+    odds_low: float | None = None
+    odds_high: float | None = None
+    favorite: int | None = None
+
+
+class OddsTableResponse(BaseModel):
+    """Full odds table for a single bet type (all combinations)."""
+
+    race_id: str
+    bet_type: str
+    status: str | None = None  # result | middle | yoso
+    official_datetime: str | None = None
+    combos: list[OddsComboEntry] = []
+
+
 # --- Aptitude schemas ---
 
 

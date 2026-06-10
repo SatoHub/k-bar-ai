@@ -25,11 +25,20 @@
 # 自動（PowerShell）
 irm https://raw.githubusercontent.com/miyamamoto/jrvltsql/master/install.ps1 | iex
 
-# もしくは手動
+# もしくは手動（本プロジェクトは既存の32bit venvに入れる）
 git clone https://github.com/miyamamoto/jrvltsql.git
 cd jrvltsql
-pip install -e .
+# 32bit venv を使う: backend/jravan/.venv32 にインストール
+..\.venv32\Scripts\python.exe -m pip install -e .
 ```
+
+> ⚠️ **必須:** `pg8000`（純Python・32bit対応のPostgreSQLドライバ）も入れること。
+> SQLite利用時でも `src/database/__init__.py` がPostgreSQLハンドラを無条件importするため、
+> 未導入だと「テーブル作成失敗」で落ちる（2026-06-10にハマった）。
+> ```powershell
+> ..\.venv32\Scripts\python.exe -m pip install pg8000
+> ```
+> psycopg[binary]は32bitホイールが無いことがあるので **pg8000** を使う。
 
 ## 3. 取り込み先PostgreSQLを用意（本アプリDBとは分離）
 

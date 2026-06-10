@@ -19,6 +19,7 @@ import AiRecommendations from "@/components/AiRecommendations";
 import BettingSimulator, {
   type SessionBet,
 } from "@/components/BettingSimulator";
+import BetMethodComparison from "@/components/BetMethodComparison";
 
 export default function SimulatePage({
   params,
@@ -262,6 +263,11 @@ export default function SimulatePage({
           </div>
         </div>
       </div>
+
+      {/* 組数・オッズ比較（全買い方・全券種） */}
+      {race.entries.length > 0 && (
+        <BetMethodComparison raceIdStr={race.race_id} entries={race.entries} />
+      )}
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
