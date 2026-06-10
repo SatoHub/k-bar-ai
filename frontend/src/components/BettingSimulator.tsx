@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { createBet, fetchComboOdds, type RaceEntry, type BetRecord } from "@/lib/api";
+import {
+  createBet,
+  fetchComboOdds,
+  fetchOddsTable,
+  type RaceEntry,
+  type BetRecord,
+  type OddsComboEntry,
+} from "@/lib/api";
 import {
   type BuyingMethodType,
   getPointCount,
@@ -69,11 +76,13 @@ type BetSlotState = {
   nagashiAxisCount: 1 | 2;        // nagashi mode: 1 or 2 axis horses
   nagashiAxisPositions: number[]; // nagashi ordered: which positions axis horses fix to
   manualOdds: string;
-  amount: number;
+  amount: number;                 // 通常=掛け金 / 複数買い=1点あたりの既定掛け金
   fetchedOdds: number | null;
   oddsFetching: boolean;
   oddsFetchFailed: boolean;
   showCombinations: boolean;      // toggle for combination preview
+  comboAmounts: Record<string, number>; // 複数買い: 買い目ごとの個別掛け金（未設定はamount）
+  comboOdds: Record<string, number>;    // 複数買い: 買い目ごとの自動取得オッズ
 };
 
 type Props = {
@@ -128,6 +137,8 @@ function createSlot(betType = "tansho"): BetSlotState {
     oddsFetching: false,
     oddsFetchFailed: false,
     showCombinations: false,
+    comboAmounts: {},
+    comboOdds: {},
   };
 }
 
@@ -174,6 +185,69 @@ function getSlotPointCount(slot: BetSlotState): number {
     },
     { picks: typeDef.picks, ordered: typeDef.ordered },
   );
+}
+
+/** horse.id → 馬番(post_position) のマップ */
+function buildIdToPost(entries: RaceEntry[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const e of entries) {
+    if (e.post_position != null) m.set(e.horse.id, e.post_position);
+  }
+  return m;
+}
+
+/** combo（馬ID配列 or 枠番）→ netkeibaオッズキー "01-02-03" */
+function buildComboKey(
+  comboIds: string[],
+  ordered: boolean,
+  isWaku: boolean,
+  idToPost: Map<string, number>,
+): string | null {
+  const nums: number[] = [];
+  for (const id of comboIds) {
+    const n = isWaku ? Number(id) : idToPost.get(id);
+    if (!n || Number.isNaN(n)) return null;
+    nums.push(n);
+  }
+  const arranged = ordered ? nums : [...nums].sort((a, b) => a - b);
+  return arranged.map((n) => String(n).padStart(2, "0")).join("-");
+}
+
+/** 複数買いの全買い目（馬ID配列）を展開。通常は空配列。 */
+function getSlotCombos(slot: BetSlotState): string[][] {
+  if (slot.buyingMethod === "normal") return [];
+  const typeDef = getTypeDef(slot.betType);
+  return expandCombinations(
+    {
+      buyingMethod: slot.buyingMethod,
+      betType: slot.betType,
+      boxSelections: slot.boxSelections,
+      formationSets: slot.formationSets,
+      axisHorses: slot.axisHorses,
+      partnerHorses: slot.partnerHorses,
+      nagashiAxisPositions: slot.nagashiAxisPositions,
+    },
+    { picks: typeDef.picks, ordered: typeDef.ordered },
+  );
+}
+
+/** 買い目ごとの掛け金（個別指定がなければ既定amount） */
+function getComboAmount(slot: BetSlotState, key: string | null): number {
+  if (key && slot.comboAmounts[key] != null) return slot.comboAmounts[key];
+  return slot.amount;
+}
+
+/** スロットの合計賭け金（複数買いは買い目ごとの合算） */
+function getSlotTotalCost(slot: BetSlotState, entries: RaceEntry[]): number {
+  if (slot.buyingMethod === "normal") return slot.amount;
+  const typeDef = getTypeDef(slot.betType);
+  const idToPost = buildIdToPost(entries);
+  let total = 0;
+  for (const combo of getSlotCombos(slot)) {
+    const key = buildComboKey(combo, typeDef.ordered, typeDef.isWaku, idToPost);
+    total += getComboAmount(slot, key);
+  }
+  return total;
 }
 
 function isSlotComplete(slot: BetSlotState): boolean {
@@ -301,23 +375,34 @@ function HorseCheckboxGrid({
   );
 }
 
-/* ─── Combination Preview ─── */
+/* ─── Combination Breakdown（買い目別オッズ＋個別賭け金） ─── */
 
-function CombinationPreview({
-  combinations,
+function ComboBreakdown({
+  combos,
+  slot,
   entries,
   isWaku,
-  show,
-  onToggle,
+  ordered,
+  idToPost,
+  oddsMap,
+  oddsLoading,
+  oddsStatus,
+  onAmountChange,
+  onResetAmounts,
 }: {
-  combinations: string[][];
+  combos: string[][];
+  slot: BetSlotState;
   entries: RaceEntry[];
   isWaku: boolean;
-  show: boolean;
-  onToggle: () => void;
+  ordered: boolean;
+  idToPost: Map<string, number>;
+  oddsMap: Map<string, OddsComboEntry>;
+  oddsLoading: boolean;
+  oddsStatus: string | null;
+  onAmountChange: (key: string, amount: number) => void;
+  onResetAmounts: () => void;
 }) {
-  const count = combinations.length;
-  if (count === 0) return null;
+  const count = combos.length;
 
   function resolveLabel(id: string): string {
     if (isWaku) return `${id}枠`;
@@ -325,35 +410,150 @@ function CombinationPreview({
     return entry ? `${entry.post_position ?? "?"}${entry.horse.name}` : id;
   }
 
-  const autoExpand = count <= 10;
-  const visible = autoExpand || show;
+  const rows = useMemo(() => {
+    return combos.map((combo) => {
+      const key = buildComboKey(combo, ordered, isWaku, idToPost);
+      const entry = key ? oddsMap.get(key) : undefined;
+      const odds = entry?.odds ?? null;
+      const amount = getComboAmount(slot, key);
+      const payout = odds != null && odds > 0 ? calculatePayout(amount, odds) : null;
+      return {
+        key,
+        label: combo.map(resolveLabel).join(ordered ? " → " : " - "),
+        odds,
+        oddsLow: entry?.odds_low ?? null,
+        oddsHigh: entry?.odds_high ?? null,
+        amount,
+        payout,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combos, ordered, isWaku, idToPost, oddsMap, slot.comboAmounts, slot.amount]);
+
+  const totalStake = rows.reduce((s, r) => s + (r.amount || 0), 0);
+  const hasCustom = Object.keys(slot.comboAmounts).length > 0;
+
+  if (count === 0) return null;
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex cursor-pointer items-center gap-1 text-[10px] font-medium transition-colors"
-        style={{ color: "var(--accent)" }}
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+          買い目別オッズ・賭け金（{count}点）
+          {oddsLoading && (
+            <span className="ml-1" style={{ color: "var(--accent)" }}>
+              オッズ取得中...
+            </span>
+          )}
+          {!oddsLoading && oddsStatus && (
+            <span className="ml-1" style={{ color: "var(--text-muted)" }}>
+              {oddsStatus === "result" ? "確定" : oddsStatus === "middle" ? "暫定" : "予想"}オッズ
+            </span>
+          )}
+        </span>
+        {hasCustom && (
+          <button
+            type="button"
+            onClick={onResetAmounts}
+            className="cursor-pointer text-[10px] font-medium"
+            style={{ color: "var(--accent)" }}
+            title="全買い目を「1点あたり掛け金」に戻す"
+          >
+            均等に戻す
+          </button>
+        )}
+      </div>
+      <div
+        className="max-h-60 overflow-y-auto rounded-lg"
+        style={{ border: "1px solid var(--border)" }}
       >
-        {visible ? "▼" : "▶"} 買い目一覧 ({count}点)
-      </button>
-      {visible && (
-        <div
-          className="mt-1 max-h-40 overflow-y-auto rounded-lg p-2 text-xs"
-          style={{
-            backgroundColor: "rgba(255,255,255,0.03)",
-            border: "1px solid var(--border)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          {combinations.map((combo, i) => (
-            <div key={i} className="py-0.5">
-              {combo.map((id) => resolveLabel(id)).join(" - ")}
-            </div>
-          ))}
-        </div>
-      )}
+        <table className="w-full text-xs">
+          <thead className="sticky top-0">
+            <tr
+              className="text-left text-[9px] font-semibold uppercase tracking-wider"
+              style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text-muted)" }}
+            >
+              <th className="px-2 py-1.5">買い目</th>
+              <th className="px-2 py-1.5 text-right">オッズ</th>
+              <th className="px-2 py-1.5 text-right">掛け金</th>
+              <th className="px-2 py-1.5 text-right">的中時払戻</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const oddsText =
+                r.oddsLow != null && r.oddsHigh != null && r.oddsLow !== r.oddsHigh
+                  ? `${r.oddsLow.toFixed(1)}〜${r.oddsHigh.toFixed(1)}`
+                  : r.odds != null
+                    ? `${r.odds.toFixed(1)}`
+                    : "—";
+              return (
+                <tr
+                  key={r.key ?? i}
+                  style={{ borderTop: i === 0 ? "none" : "1px solid var(--border)" }}
+                >
+                  <td
+                    className="px-2 py-1 font-medium tabular-nums"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {r.label}
+                  </td>
+                  <td
+                    className="px-2 py-1 text-right tabular-nums"
+                    style={{
+                      color:
+                        r.odds != null && r.odds <= 10
+                          ? "var(--accent)"
+                          : "var(--text-secondary)",
+                    }}
+                  >
+                    {oddsText}
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={r.amount}
+                      disabled={!r.key}
+                      onChange={(e) =>
+                        r.key && onAmountChange(r.key, Number(e.target.value))
+                      }
+                      className="w-16 rounded px-1 py-0.5 text-right text-xs tabular-nums"
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.04)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-primary)",
+                      }}
+                    />
+                  </td>
+                  <td
+                    className="px-2 py-1 text-right tabular-nums"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {r.payout != null ? `¥${r.payout.toLocaleString()}` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: "1px solid var(--border)", backgroundColor: "rgba(255,255,255,0.02)" }}>
+              <td className="px-2 py-1.5 text-[10px] font-semibold" style={{ color: "var(--text-muted)" }}>
+                合計
+              </td>
+              <td />
+              <td
+                className="px-2 py-1.5 text-right text-xs font-bold tabular-nums"
+                style={{ color: "var(--text-primary)" }}
+              >
+                ¥{totalStake.toLocaleString()}
+              </td>
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
@@ -384,10 +584,51 @@ function BetSlotCard({
   const typeDef = getTypeDef(slot.betType);
   const effectiveOdds = getSlotOdds(slot, entries);
   const pointCount = getSlotPointCount(slot);
-  const totalCost = pointCount * slot.amount;
+  const totalCost = getSlotTotalCost(slot, entries);
 
   // For normal mode: auto-fetch odds when all horses are selected
   const isNormal = slot.buyingMethod === "normal";
+  const isMulti = !isNormal;
+  const oddsSupported = slot.betType !== "tansho" && slot.betType !== "fukusho";
+
+  // 馬番マップ（買い目→オッズキー変換用）
+  const idToPost = useMemo(() => buildIdToPost(entries), [entries]);
+
+  // 複数買い: 券種の全組オッズ表を自動取得
+  const [oddsTable, setOddsTable] = useState<OddsComboEntry[] | null>(null);
+  const [oddsTableLoading, setOddsTableLoading] = useState(false);
+  const [oddsTableStatus, setOddsTableStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isMulti || !oddsSupported) {
+      setOddsTable(null);
+      setOddsTableStatus(null);
+      return;
+    }
+    let cancelled = false;
+    setOddsTableLoading(true);
+    fetchOddsTable(raceId, slot.betType)
+      .then((res) => {
+        if (cancelled) return;
+        setOddsTable(res.combos);
+        setOddsTableStatus(res.status);
+      })
+      .catch(() => {
+        if (!cancelled) setOddsTable(null);
+      })
+      .finally(() => {
+        if (!cancelled) setOddsTableLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [raceId, slot.betType, isMulti, oddsSupported]);
+
+  const oddsMap = useMemo(() => {
+    const m = new Map<string, OddsComboEntry>();
+    for (const c of oddsTable ?? []) m.set(c.combo, c);
+    return m;
+  }, [oddsTable]);
   const allHorsesSelected = isNormal &&
     slot.selectedHorses.length === typeDef.picks &&
     slot.selectedHorses.every((h) => h !== "");
@@ -472,6 +713,29 @@ function BetSlotCard({
     slot.nagashiAxisPositions, typeDef.picks, typeDef.ordered,
   ]);
 
+  // 展開した買い目の自動オッズを抽出（保存・集計用にスロットへ永続化）
+  const comboOddsForState = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const combo of combinations) {
+      const key = buildComboKey(combo, typeDef.ordered, typeDef.isWaku, idToPost);
+      if (!key) continue;
+      const e = oddsMap.get(key);
+      if (e?.odds != null) m[key] = e.odds;
+    }
+    return m;
+  }, [combinations, typeDef.ordered, typeDef.isWaku, idToPost, oddsMap]);
+
+  useEffect(() => {
+    const cur = slot.comboOdds ?? {};
+    const next = comboOddsForState;
+    const keys = Object.keys(next);
+    const same =
+      keys.length === Object.keys(cur).length &&
+      keys.every((k) => cur[k] === next[k]);
+    if (!same) onUpdate(slot.slotId, { comboOdds: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comboOddsForState]);
+
   function handleBetTypeChange(value: string) {
     const newType = BET_TYPES.find((t) => t.value === value) ?? BET_TYPES[0];
     // Reset buying method if not supported
@@ -492,6 +756,8 @@ function BetSlotCard({
       oddsFetching: false,
       oddsFetchFailed: false,
       showCombinations: false,
+      comboAmounts: {},
+      comboOdds: {},
     });
   }
 
@@ -509,6 +775,8 @@ function BetSlotCard({
       oddsFetching: false,
       oddsFetchFailed: false,
       showCombinations: false,
+      comboAmounts: {},
+      comboOdds: {},
     });
   }
 
@@ -959,14 +1227,24 @@ function BetSlotCard({
           </div>
         )}
 
-        {/* Combination Preview (for non-normal modes) */}
-        {slot.buyingMethod !== "normal" && combinations.length > 0 && (
-          <CombinationPreview
-            combinations={combinations}
+        {/* 買い目別オッズ・賭け金（複数買い） */}
+        {isMulti && combinations.length > 0 && (
+          <ComboBreakdown
+            combos={combinations}
+            slot={slot}
             entries={entries}
             isWaku={typeDef.isWaku}
-            show={slot.showCombinations}
-            onToggle={() => onUpdate(slot.slotId, { showCombinations: !slot.showCombinations })}
+            ordered={typeDef.ordered}
+            idToPost={idToPost}
+            oddsMap={oddsMap}
+            oddsLoading={oddsTableLoading}
+            oddsStatus={oddsTableStatus}
+            onAmountChange={(key, amount) =>
+              onUpdate(slot.slotId, {
+                comboAmounts: { ...slot.comboAmounts, [key]: amount },
+              })
+            }
+            onResetAmounts={() => onUpdate(slot.slotId, { comboAmounts: {} })}
           />
         )}
 
@@ -985,7 +1263,8 @@ function BetSlotCard({
         )}
 
         {/* Odds & Amount row */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid gap-2 ${isMulti ? "grid-cols-1" : "grid-cols-2"}`}>
+          {isNormal && (
           <div>
             <label
               className="mb-0.5 block text-[10px] font-medium"
@@ -1066,12 +1345,13 @@ function BetSlotCard({
               />
             )}
           </div>
+          )}
           <div>
             <label
               className="mb-0.5 block text-[10px] font-medium"
               style={{ color: "var(--text-muted)" }}
             >
-              {slot.buyingMethod !== "normal" ? "1点あたり掛け金" : "掛け金"}
+              {isMulti ? "1点あたり掛け金（全買い目の初期値）" : "掛け金"}
             </label>
             <div className="relative">
               <input
@@ -1167,6 +1447,8 @@ export default function BettingSimulator({
           oddsFetching: false,
           oddsFetchFailed: false,
           showCombinations: false,
+          comboAmounts: {},
+          comboOdds: {},
         },
       ];
     });
@@ -1211,15 +1493,27 @@ export default function BettingSimulator({
     for (const slot of slots) {
       const points = getSlotPointCount(slot);
       totalPoints += points;
-      totalAmount += points * slot.amount;
-      const odds = getSlotOdds(slot, entries);
-      if (odds !== null && odds > 0 && slot.amount > 0) {
-        if (slot.buyingMethod === "normal") {
-          totalPayout += calculatePayout(slot.amount, odds);
-        } else {
-          // For multi-bet: max payout = highest single combo payout × 1 (representative)
+      if (slot.buyingMethod === "normal") {
+        totalAmount += slot.amount;
+        const odds = getSlotOdds(slot, entries);
+        if (odds !== null && odds > 0 && slot.amount > 0) {
           totalPayout += calculatePayout(slot.amount, odds);
         }
+      } else {
+        // 複数買い: 買い目ごとの掛け金を合算。払戻は的中1点あたりの最大払戻。
+        const typeDef = getTypeDef(slot.betType);
+        const idToPost = buildIdToPost(entries);
+        let maxPayout = 0;
+        for (const combo of getSlotCombos(slot)) {
+          const key = buildComboKey(combo, typeDef.ordered, typeDef.isWaku, idToPost);
+          const amt = getComboAmount(slot, key);
+          totalAmount += amt;
+          const o = key ? slot.comboOdds[key] : undefined;
+          if (o != null && o > 0 && amt > 0) {
+            maxPayout = Math.max(maxPayout, calculatePayout(amt, o));
+          }
+        }
+        totalPayout += maxPayout;
       }
       if (isSlotComplete(slot)) {
         completeCount++;
@@ -1282,7 +1576,11 @@ export default function BettingSimulator({
           },
           { picks: typeDef.picks, ordered: typeDef.ordered },
         );
+        const idToPost = buildIdToPost(entries);
         for (const combo of combos) {
+          const key = buildComboKey(combo, typeDef.ordered, typeDef.isWaku, idToPost);
+          const comboAmount = getComboAmount(slot, key);
+          const comboOdds = key && slot.comboOdds[key] != null ? slot.comboOdds[key] : null;
           const horseNames = typeDef.isWaku
             ? combo.map((w) => `${w}枠`).join(", ")
             : combo
@@ -1295,16 +1593,19 @@ export default function BettingSimulator({
               bet_date: raceDate,
               bet_type: slot.betType,
               horse_names: horseNames,
-              amount_yen: slot.amount,
-              odds_at_bet: odds,
+              amount_yen: comboAmount,
+              odds_at_bet: comboOdds,
             });
             savedBets.push({
               id: record.id,
               betType: typeDef.label,
               horseNames,
-              amount: slot.amount,
-              odds,
-              payout: odds !== null && odds > 0 ? calculatePayout(slot.amount, odds) : null,
+              amount: comboAmount,
+              odds: comboOdds,
+              payout:
+                comboOdds !== null && comboOdds > 0
+                  ? calculatePayout(comboAmount, comboOdds)
+                  : null,
             });
           } catch {
             failCount++;
