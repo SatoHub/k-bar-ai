@@ -249,6 +249,76 @@ export function generateNagashiCombinations(
   return result;
 }
 
+// --- Nagashi patterns (着順固定 / マルチ) ---
+
+/**
+ * 流しの着順パターン定義。
+ * - axisPositions: 軸馬を固定する着順（0=1着, 1=2着, 2=3着）。
+ *   axisHorses[i] が axisPositions[i] の着に入る。undefined = マルチ（全着順網羅）。
+ * - multi: true のとき軸の着順を入れ替えた組合せも全て購入（JRAのマルチ投票）。
+ */
+export type NagashiPattern = {
+  key: string;
+  label: string;
+  axisPositions?: number[];
+  multi: boolean;
+  desc: string;
+};
+
+/**
+ * 券種・軸頭数に応じて、ネット馬券（JRA即PAT）で選べる流しパターンを返す。
+ * @param picks 必要頭数（2 or 3）
+ * @param ordered 着順あり（馬単/三連単）
+ * @param axisCount 軸の頭数（1 or 2）
+ */
+export function getNagashiPatterns(
+  picks: number,
+  ordered: boolean,
+  axisCount: number,
+): NagashiPattern[] {
+  if (picks < 2) return [];
+
+  // 着順なし（枠連/馬連/ワイド/三連複）
+  if (!ordered) {
+    return [
+      {
+        key: "std",
+        label: axisCount >= 2 ? "軸2頭ながし" : "軸1頭ながし",
+        multi: false,
+        desc:
+          axisCount >= 2
+            ? "軸2頭＋相手1頭（着順不問）"
+            : "軸1頭＋相手（着順不問）",
+      },
+    ];
+  }
+
+  // 馬単（着順あり・2頭）— 軸は1頭
+  if (picks === 2) {
+    return [
+      { key: "pos1", label: "1着ながし", axisPositions: [0], multi: false, desc: "軸を1着に固定" },
+      { key: "pos2", label: "2着ながし", axisPositions: [1], multi: false, desc: "軸を2着に固定" },
+      { key: "multi", label: "マルチ", multi: true, desc: "1着・2着の入れ替えも両取り（2倍）" },
+    ];
+  }
+
+  // 三連単（着順あり・3頭）
+  if (axisCount >= 2) {
+    return [
+      { key: "pos12", label: "1・2着ながし", axisPositions: [0, 1], multi: false, desc: "①を1着・②を2着に固定" },
+      { key: "pos13", label: "1・3着ながし", axisPositions: [0, 2], multi: false, desc: "①を1着・②を3着に固定" },
+      { key: "pos23", label: "2・3着ながし", axisPositions: [1, 2], multi: false, desc: "①を2着・②を3着に固定" },
+      { key: "multi", label: "軸2頭マルチ", multi: true, desc: "軸2頭の全着順を網羅（相手1頭につき6通り）" },
+    ];
+  }
+  return [
+    { key: "pos1", label: "1着ながし", axisPositions: [0], multi: false, desc: "軸を1着に固定" },
+    { key: "pos2", label: "2着ながし", axisPositions: [1], multi: false, desc: "軸を2着に固定" },
+    { key: "pos3", label: "3着ながし", axisPositions: [2], multi: false, desc: "軸を3着に固定" },
+    { key: "multi", label: "軸1頭マルチ", multi: true, desc: "軸の全着順を網羅（相手の組合せ×6通り）" },
+  ];
+}
+
 // --- Unified interface ---
 
 export type BetSlotForCalc = {

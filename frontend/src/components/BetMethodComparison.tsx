@@ -15,6 +15,7 @@ import {
 import {
   getPointCount,
   expandCombinations,
+  getNagashiPatterns,
   type BuyingMethodType,
 } from "@/lib/betCalculations";
 
@@ -37,6 +38,8 @@ const METHODS: { value: BuyingMethodType; label: string; desc: string }[] = [
   { value: "formation", label: "フォーメーション", desc: "着順ごとに候補を指定" },
   { value: "nagashi", label: "流し", desc: "軸＋相手の組合せ" },
 ];
+
+const AXIS_BADGE = ["①", "②"];
 
 const STATUS_LABEL: Record<string, string> = {
   result: "確定",
@@ -75,7 +78,10 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
   const [activeMethod, setActiveMethod] = useState<BuyingMethodType>("box");
   // 馬の選択（馬ID）。枠連のときは枠番文字列。
   const [pool, setPool] = useState<string[]>([]);
+  // 軸（流し用）。選択順を保持し、1頭目=①, 2頭目=② として着固定に使う。
   const [axisIds, setAxisIds] = useState<string[]>([]);
+  // 流しの着順パターン（getNagashiPatterns のキー）
+  const [nagashiPattern, setNagashiPattern] = useState<string>("std");
   // フォーメーション: 各着順の候補（馬ID）
   const [formationSets, setFormationSets] = useState<string[][]>([[], [], []]);
 
@@ -87,6 +93,16 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
 
   const typeDef = getTypeDef(betType);
   const { picks, ordered, isWaku } = typeDef;
+  // 流しの軸は最大 (picks-1) 頭（馬連/馬単=1, 三連系=2）
+  const maxAxis = Math.max(1, picks - 1);
+
+  // 軸頭数に応じた流しパターン
+  const nagashiPatterns = useMemo(
+    () => getNagashiPatterns(picks, ordered, Math.min(Math.max(axisIds.length, 1), maxAxis)),
+    [picks, ordered, axisIds.length, maxAxis],
+  );
+  const activePattern =
+    nagashiPatterns.find((p) => p.key === nagashiPattern) ?? nagashiPatterns[0];
 
   // 選択候補（枠連は枠番、それ以外は出走馬）
   const options = useMemo(() => {
@@ -141,6 +157,14 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [betType]);
 
+  // 軸頭数や券種が変わったら、無効になった流しパターンを先頭に寄せる
+  useEffect(() => {
+    if (!nagashiPatterns.some((p) => p.key === nagashiPattern)) {
+      setNagashiPattern(nagashiPatterns[0]?.key ?? "std");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [betType, axisIds.length]);
+
   // オッズ表を券種ごとに取得（picks>=1 すべて）
   useEffect(() => {
     let cancelled = false;
@@ -194,7 +218,7 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
         : 0;
     const partners = pool.filter((id) => !axisIds.includes(id));
     const nagashi =
-      axisIds.length >= 1 && axisIds.length < picks
+      axisIds.length >= 1 && axisIds.length < picks && activePattern
         ? getPointCount(
             {
               buyingMethod: "nagashi",
@@ -203,6 +227,9 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
               formationSets: [],
               axisHorses: axisIds,
               partnerHorses: partners,
+              nagashiAxisPositions: activePattern.multi
+                ? undefined
+                : activePattern.axisPositions,
             },
             def,
           )
@@ -223,7 +250,7 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
         )
       : 0;
     return { normal, box, nagashi, formation };
-  }, [pool, axisIds, formationSets, picks, ordered, betType]);
+  }, [pool, axisIds, formationSets, picks, ordered, betType, activePattern]);
 
   // 選択中の買い方の全組み合わせ
   const activeCombos = useMemo(() => {
@@ -239,10 +266,14 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
         formationSets,
         axisHorses: axisIds,
         partnerHorses: pool.filter((id) => !axisIds.includes(id)),
+        nagashiAxisPositions:
+          activeMethod === "nagashi" && activePattern && !activePattern.multi
+            ? activePattern.axisPositions
+            : undefined,
       },
       def,
     );
-  }, [activeMethod, pool, axisIds, formationSets, picks, ordered, betType]);
+  }, [activeMethod, pool, axisIds, formationSets, picks, ordered, betType, activePattern]);
 
   // 組み合わせ＋オッズ
   const comboRows = useMemo(() => {
@@ -274,16 +305,21 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
   }, [comboRows]);
 
   function togglePool(id: string) {
+    const removing = pool.includes(id);
     setPool((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
-    setAxisIds((prev) => prev.filter((x) => x !== id || pool.includes(id)));
+    // プールから外す馬は軸からも外す
+    if (removing) setAxisIds((prev) => prev.filter((x) => x !== id));
   }
 
   function toggleAxis(id: string) {
-    setAxisIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    setAxisIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      // 軸の上限（馬連/馬単=1, 三連系=2）を超える場合は古い軸を押し出す
+      if (prev.length >= maxAxis) return [...prev.slice(1), id];
+      return [...prev, id];
+    });
   }
 
   function toggleFormation(posIdx: number, id: string) {
@@ -388,34 +424,88 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
         )}
       </div>
 
-      {/* 流し: 軸指定 */}
+      {/* 流し: 軸指定＋着順パターン */}
       {picks >= 2 && pool.length >= 1 && (
-        <div>
-          <p className="mb-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-            流しの軸（選択馬から指定 / オレンジ表示）
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {pool.map((id) => {
-              const isAxis = axisIds.includes(id);
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => toggleAxis(id)}
-                  className="cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150"
-                  style={{
-                    background: isAxis
-                      ? "linear-gradient(135deg, #F59E0B, #EF4444)"
-                      : "rgba(255,255,255,0.04)",
-                    color: isAxis ? "#fff" : "var(--text-muted)",
-                    border: isAxis ? "none" : "1px solid var(--border)",
-                  }}
-                >
-                  {labelOf(id)}
-                </button>
-              );
-            })}
+        <div className="space-y-2">
+          <div>
+            <p className="mb-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+              流しの軸（選択馬から指定 / 最大{maxAxis}頭・オレンジ表示）
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {pool.map((id) => {
+                const axisIdx = axisIds.indexOf(id);
+                const isAxis = axisIdx >= 0;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => toggleAxis(id)}
+                    className="cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150"
+                    style={{
+                      background: isAxis
+                        ? "linear-gradient(135deg, #F59E0B, #EF4444)"
+                        : "rgba(255,255,255,0.04)",
+                      color: isAxis ? "#fff" : "var(--text-muted)",
+                      border: isAxis ? "none" : "1px solid var(--border)",
+                    }}
+                  >
+                    {maxAxis >= 2 && isAxis && (
+                      <span className="mr-1">{AXIS_BADGE[axisIdx] ?? ""}</span>
+                    )}
+                    {labelOf(id)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* 着順パターン（馬単/三連単は着固定・マルチ、三連複は軸頭数で自動） */}
+          {axisIds.length >= 1 && nagashiPatterns.length > 1 && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                流しパターン
+                {maxAxis >= 2 && axisIds.length >= 2 && (
+                  <span className="ml-1" style={{ color: "var(--text-muted)" }}>
+                    （①{labelOf(axisIds[0])} / ②{labelOf(axisIds[1])}）
+                  </span>
+                )}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {nagashiPatterns.map((p) => {
+                  const on = activePattern?.key === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => {
+                        setNagashiPattern(p.key);
+                        setActiveMethod("nagashi");
+                      }}
+                      title={p.desc}
+                      className="cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150"
+                      style={{
+                        background: on
+                          ? "linear-gradient(135deg, var(--accent), #8B5CF6)"
+                          : "rgba(255,255,255,0.04)",
+                        color: on ? "#fff" : "var(--text-secondary)",
+                        border: on ? "none" : "1px solid var(--border)",
+                      }}
+                    >
+                      {p.label}
+                      {p.multi && (
+                        <span className="ml-1 text-[9px] opacity-80">MULTI</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {activePattern && (
+                <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {activePattern.desc}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -519,7 +609,9 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
                     {count > 0 ? `${(count * 100).toLocaleString()}円` : "—"}
                   </td>
                   <td className="px-4 py-2.5 text-xs" style={{ color: "var(--text-muted)" }}>
-                    {m.desc}
+                    {m.value === "nagashi" && activePattern && axisIds.length >= 1
+                      ? `${activePattern.label}：${activePattern.desc}`
+                      : m.desc}
                   </td>
                 </tr>
               );
@@ -532,7 +624,11 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>
-            {METHODS.find((m) => m.value === activeMethod)?.label} の組み合わせオッズ
+            {METHODS.find((m) => m.value === activeMethod)?.label}
+            {activeMethod === "nagashi" && activePattern && axisIds.length >= 1
+              ? `（${activePattern.label}）`
+              : ""}{" "}
+            の組み合わせオッズ
           </h3>
           <div className="flex items-center gap-2">
             {oddsStatus && STATUS_LABEL[oddsStatus] && (
