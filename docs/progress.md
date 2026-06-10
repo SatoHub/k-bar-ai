@@ -1,10 +1,53 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-10（jrvltsql導入＆検証 / 全券種オッズ・組数比較UI フェーズ1実装）
+**最終更新:** 2026-06-10（夕方：馬券UI改善5件を本番反映 / 流し全方式・買い目別オッズ・枠色バッジ）
 
 ---
 
-## 🟢 2026-06-10 セッション成果（最新）
+## 🟢 2026-06-10（夕方）セッション成果 ＝ 馬券UI改善（最新・ここを最初に読む）
+
+> **今日やったこと:** 馬券まわりのUI/UXを5件改善し、すべて本番反映済み（GitHub Actions自動デプロイ成功）。
+> バックエンド変更なし、フロントエンド（`frontend/src/`）のみ。最終コミット `a10b62b`。
+
+### 本番反映した5件（すべてデプロイ成功）
+1. **レース一覧の検索フィルターバー削除**（`app/races/page.tsx`）
+   - 年月/週/日付指定/競馬場の検索欄を撤去し、**日付選択をカレンダー一本化**。
+   - 競馬場の絞り込みは既存の競馬場タブが担当。`RaceFilters.tsx` は削除。
+2. **流しに「軸頭数・着固定・マルチ」を追加＝ネット馬券(JRA即PAT)の全方式に対応**
+   - `lib/betCalculations.ts` に `getNagashiPatterns(picks, ordered, axisCount)` を新設。
+     馬単=1着/2着/マルチ、三連複=軸1頭/軸2頭、三連単=1/2/3着・軸1頭マルチ／
+     1・2/1・3/2・3着・軸2頭マルチ。**点数式はJRA公式12ケースで検証済み**。
+   - `BetMethodComparison.tsx` に軸頭数上限(picks-1)・①②順バッジ・流しパターン選択UIを追加。
+3. **馬券シミュレーターの複数買いを「買い目別オッズ自動取得＋個別賭け金配分」に**（`BettingSimulator.tsx`）
+   - 代表オッズの手入力を**廃止**。`fetchOddsTable()` で全組オッズを自動取得し、
+     `ComboBreakdown` で買い目ごとに一覧（オッズ/掛け金/的中時払戻）。
+   - 買い目ごとに**掛け金を個別配分**可能。slot状態に `comboAmounts`/`comboOdds` を追加。
+     既定=「1点あたり掛け金」、「均等に戻す」でリセット。保存・集計も買い目別。
+4. **買い目一覧を枠色付き馬番バッジ表示に**（シミュレーター）
+   - 横長な馬名テキスト→JRA公式の枠色(1白2黒3赤4青5黄6緑7橙8桃)バッジ。三連単は「→」、
+     馬名はホバーtitle、行は縞模様。
+5. **組数・オッズ比較の組み合わせ一覧も枠色バッジ化＋共通化**
+   - バッジを `components/ComboBadges.tsx` 共通コンポーネントに切り出し、両画面で共用
+     （`size="md"`=比較画面 / `"sm"`=シミュレーター）。
+
+### 次にやること（馬券UIの続き・優先度順）
+- [ ] **動作確認（実機）:** 本番 `/races/{id}/simulate` で複数買い→買い目別オッズ自動取得・
+      個別配分・枠色バッジが正しく出るか目視（Ctrl+Shift+Rでキャッシュクリア）。発売前/締切後は
+      オッズ「—」になる点に注意（確定オッズは過去レースで確認可）。
+- [ ] **フェーズ1残:** レース詳細ページのオッズ表示を単勝のみ→**全8券種タブ表示**（旧task#6）。
+- [ ] **フェーズ2:** JRA-VAN速報の自宅PC→VPS中継＋netkeiba自動フォールバック（source列＋バッジ）。
+- [ ] （任意）`slot.showCombinations` が未使用フィールドとして残存。気になれば除去。
+
+### 主要ファイル早見表（馬券UI）
+- `frontend/src/lib/betCalculations.ts` — 組合せ計算＋`getNagashiPatterns`（流し全方式）
+- `frontend/src/components/BetMethodComparison.tsx` — 組数・オッズ比較UI（券種×買い方）
+- `frontend/src/components/BettingSimulator.tsx` — 馬券シミュレーター（複数スロット・買い目別配分）
+- `frontend/src/components/ComboBadges.tsx` — 枠色バッジ共通コンポーネント
+- API: `GET /races/{id}/odds/table?bet_type=`（全組オッズ）, `POST /races/{id}/odds/combo`（1組）
+
+---
+
+## 🟢 2026-06-10（日中）セッション成果
 
 ### A. jrvltsql 導入＆パイプライン検証（自宅PC・32bit venv）
 - ✅ `backend/jravan/jrvltsql` をclone、`.venv32`へ `pip install -e .` 済み
