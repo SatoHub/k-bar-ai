@@ -18,6 +18,7 @@ import {
   getNagashiPatterns,
   type BuyingMethodType,
 } from "@/lib/betCalculations";
+import ComboBadges from "@/components/ComboBadges";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", picks: 1, ordered: false, isWaku: false },
@@ -725,13 +726,17 @@ export default function BetMethodComparison({ raceIdStr, entries }: Props) {
                       key={i}
                       style={{
                         borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                        backgroundColor: i % 2 === 1 ? "rgba(255,255,255,0.02)" : "transparent",
                       }}
                     >
-                      <td
-                        className="px-4 py-2 font-medium tabular-nums"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {r.label}
+                      <td className="px-4 py-2">
+                        <ComboBadges
+                          combo={r.combo}
+                          entries={entries}
+                          isWaku={isWaku}
+                          ordered={ordered}
+                          size="md"
+                        />
                       </td>
                       <td
                         className="px-4 py-2 text-right font-semibold tabular-nums"

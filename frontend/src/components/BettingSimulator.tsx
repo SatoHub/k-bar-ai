@@ -14,6 +14,7 @@ import {
   getPointCount,
   expandCombinations,
 } from "@/lib/betCalculations";
+import ComboBadges from "@/components/ComboBadges";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる", isWaku: false },
@@ -111,80 +112,6 @@ const PICK_LABELS_WAKU: string[] = ["枠1", "枠2"];
 
 function calculatePayout(amount: number, odds: number): number {
   return Math.floor((amount * odds) / 100) * 100;
-}
-
-// JRA公式の枠番カラー（1白/2黒/3赤/4青/5黄/6緑/7橙/8桃）
-const WAKU_COLORS: Record<number, { bg: string; fg: string }> = {
-  1: { bg: "#f3f4f6", fg: "#111827" },
-  2: { bg: "#1f2937", fg: "#f9fafb" },
-  3: { bg: "#e0353b", fg: "#ffffff" },
-  4: { bg: "#2563eb", fg: "#ffffff" },
-  5: { bg: "#f5c518", fg: "#1a1a1a" },
-  6: { bg: "#1ea64a", fg: "#ffffff" },
-  7: { bg: "#f08a24", fg: "#1a1a1a" },
-  8: { bg: "#ec6f9e", fg: "#1a1a1a" },
-};
-
-function wakuColor(bracket: number | null | undefined): { bg: string; fg: string } {
-  if (bracket && WAKU_COLORS[bracket]) return WAKU_COLORS[bracket];
-  return { bg: "rgba(255,255,255,0.08)", fg: "var(--text-primary)" };
-}
-
-/** 馬番を枠色バッジで表示。馬名はtitleツールチップ。 */
-function ComboBadges({
-  combo,
-  entries,
-  isWaku,
-  ordered,
-}: {
-  combo: string[];
-  entries: RaceEntry[];
-  isWaku: boolean;
-  ordered: boolean;
-}) {
-  const items = combo.map((id) => {
-    if (isWaku) {
-      const w = Number(id);
-      return { num: w, bracket: w, name: `${w}枠` };
-    }
-    const e = entries.find((en) => en.horse.id === id);
-    return {
-      num: e?.post_position ?? null,
-      bracket: e?.bracket_number ?? null,
-      name: e?.horse.name ?? id,
-    };
-  });
-
-  return (
-    <span className="inline-flex flex-wrap items-center gap-x-0.5 gap-y-1">
-      {items.map((it, i) => {
-        const c = wakuColor(it.bracket);
-        return (
-          <span key={i} className="inline-flex items-center">
-            {i > 0 && (
-              <span
-                className="mx-0.5 text-[10px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {ordered ? "→" : ""}
-              </span>
-            )}
-            <span
-              title={`${it.num ?? "?"} ${it.name}`}
-              className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded px-1 text-[11px] font-bold tabular-nums"
-              style={{
-                backgroundColor: c.bg,
-                color: c.fg,
-                border: "1px solid rgba(0,0,0,0.25)",
-              }}
-            >
-              {isWaku ? `${it.num}枠` : (it.num ?? "?")}
-            </span>
-          </span>
-        );
-      })}
-    </span>
-  );
 }
 
 let slotCounter = 0;
