@@ -7,6 +7,46 @@
 
 ---
 
+## 0. ⚠️ 再clone時に必ず再適用するローカルパッチ（2026-06-11）
+
+> `jrvltsql/` は `.gitignore` 済み（git管理外）。再cloneすると以下の修正が消えるため必ず再適用すること。
+
+### パッチA: JVRead回復可能エラー(-402/-403)の握り潰し修正【必須】
+`src/jvlink/wrapper.py` の `jv_read()` 末尾の `else:`（`< -1` を全てraise）が、
+本来 `src/fetcher/base.py` が「破損ファイル削除→続行」で回復できる
+**-402/-403等も即座に例外送出**し、本番取得が途中クラッシュしていた。
+→ 回復可能コードは raise せず `return result, None, filename_str` する分岐を追加:
+
+```python
+elif result in (-201, -202, -203, -402, -403, -502, -503):
+    # Recoverable errors (busy / corrupted downloaded file).
+    logger.warning("JVRead recoverable error", error_code=result, filename=filename_str)
+    return result, None, filename_str
+else:
+    # Fatal error (< -1)
+    logger.error("JVRead failed", error_code=result)
+    raise JVLinkError("JVRead failed", error_code=result)
+```
+
+### パッチB: 取り込み先DBを環境変数化
+`config/config.yaml` の `databases.postgresql.database` を
+`"keiba"` → `"${POSTGRES_DATABASE:kbar_jravan}"` に変更。
+
+### 実行時の注意
+- **`PYTHONUTF8=1` を必ず設定**（cp932コンソールだとログの `—` 等で `UnicodeEncodeError` クラッシュ）
+- 接続情報: `kbar-postgres`(localhost:5432) / DB=`kbar_jravan` / user=`kbar` / pass=`kbar_dev_password`
+- 確定オッズ込み取得（検証済み・完走）:
+  ```powershell
+  $env:PYTHONUTF8="1"; $env:POSTGRES_HOST="127.0.0.1"; $env:POSTGRES_PORT="5432"
+  $env:POSTGRES_DATABASE="kbar_jravan"; $env:POSTGRES_USER="kbar"; $env:POSTGRES_PASSWORD="kbar_dev_password"
+  ..\.venv32\Scripts\python.exe -m src.cli.main fetch --from 20260509 --to 20260609 `
+    --spec RACE --option 1 --db postgresql --no-cache --no-progress
+  ```
+  → RACE spec に RA/SE/HR と確定オッズ NL_O1〜O6 が含まれる（2日分で約21万件パース・Failed=0）
+- 日次同期は `backend/jravan/jravan_sync.bat`（PostgreSQL向け・.gitignore済み）
+
+---
+
 ## 1. 動作要件（jrvltsql公式）
 
 | 項目 | 要件 |

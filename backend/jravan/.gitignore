@@ -19,3 +19,6 @@ jrvltsql/
 *.db
 *.db-shm
 *.db-wal
+
+# 自宅PC専用の同期ラッパー（絶対パス・接続情報を含むためコミットしない）
+jravan_sync.bat
