@@ -375,6 +375,73 @@ export function fetchRaceDetail(raceId: string): Promise<RaceDetail> {
   return fetchJSON<RaceDetail>(`/races/${raceId}`);
 }
 
+// Past performances (馬柱)
+export type PastRaceRecord = {
+  race_id: string;
+  race_date: string;
+  racecourse_name: string | null;
+  race_number: number | null;
+  race_name: string | null;
+  graded_race: string | null;
+  surface: string | null;
+  distance_m: number | null;
+  track_condition: string | null;
+  field_size: number | null;
+  bracket_number: number | null;
+  post_position: number | null;
+  finish_position: number | null;
+  finish_note: string | null;
+  total_time_tenths: number | null;
+  last_3f_time: number | null;
+  margin: string | null;
+  corner_passing: string | null;
+  win_odds: number | null;
+  win_favorite: number | null;
+  weight_carried_kg: number | null;
+  horse_weight_kg: number | null;
+  horse_weight_diff: number | null;
+  jockey_name: string | null;
+};
+
+export type HorsePastPerformances = {
+  horse_id: string;
+  post_position: number | null;
+  records: PastRaceRecord[];
+};
+
+export type PastPerformancesResponse = {
+  race_id: string;
+  horses: HorsePastPerformances[];
+};
+
+export function fetchPastPerformances(
+  raceId: string,
+  limit = 5,
+): Promise<PastPerformancesResponse> {
+  return fetchJSON<PastPerformancesResponse>(
+    `/races/${raceId}/past-performances?limit=${limit}`,
+  );
+}
+
+// Pedigree (血統) — sourced from JRA-VAN NL_UM via FDW
+export type HorsePedigree = {
+  horse_id: string;
+  post_position: number | null;
+  sire: string | null;
+  dam: string | null;
+  broodmare_sire: string | null;
+  paternal_grandsire: string | null;
+};
+
+export type RacePedigreeResponse = {
+  race_id: string;
+  horses: HorsePedigree[];
+};
+
+export function fetchPedigree(raceId: string): Promise<RacePedigreeResponse> {
+  return fetchJSON<RacePedigreeResponse>(`/races/${raceId}/pedigree`);
+}
+
 export function fetchPredictions(
   raceId: string,
 ): Promise<RacePredictionResponse> {

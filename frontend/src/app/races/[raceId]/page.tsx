@@ -7,11 +7,15 @@ import {
   fetchPredictions,
   fetchOdds,
   fetchOddsHistory,
+  fetchPastPerformances,
+  fetchPedigree,
   refreshOdds,
   type RaceDetail,
   type RacePredictionResponse,
   type OddsResponse,
   type OddsHistoryResponse,
+  type PastRaceRecord,
+  type HorsePedigree,
 } from "@/lib/api";
 import PredictionTable from "@/components/PredictionTable";
 import EntryTable from "@/components/EntryTable";
@@ -32,6 +36,12 @@ export default function RaceDetailPage({
   );
   const [odds, setOdds] = useState<OddsResponse | null>(null);
   const [oddsHistory, setOddsHistory] = useState<OddsHistoryResponse | null>(null);
+  const [pastByHorse, setPastByHorse] = useState<
+    Record<string, PastRaceRecord[]>
+  >({});
+  const [pedigreeByHorse, setPedigreeByHorse] = useState<
+    Record<string, HorsePedigree>
+  >({});
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,17 +53,34 @@ export default function RaceDetailPage({
       setLoading(true);
       setError(null);
       try {
-        const [raceData, predData, oddsData, oddsHistData] = await Promise.all([
-          fetchRaceDetail(raceId),
-          fetchPredictions(raceId).catch(() => null),
-          fetchOdds(raceId).catch(() => null),
-          fetchOddsHistory(raceId).catch(() => null),
-        ]);
+        const [raceData, predData, oddsData, oddsHistData, pastData, pedData] =
+          await Promise.all([
+            fetchRaceDetail(raceId),
+            fetchPredictions(raceId).catch(() => null),
+            fetchOdds(raceId).catch(() => null),
+            fetchOddsHistory(raceId).catch(() => null),
+            fetchPastPerformances(raceId, 5).catch(() => null),
+            fetchPedigree(raceId).catch(() => null),
+          ]);
         if (cancelled) return;
         setRace(raceData);
         setPredictions(predData);
         setOdds(oddsData);
         setOddsHistory(oddsHistData);
+        if (pastData) {
+          const map: Record<string, PastRaceRecord[]> = {};
+          for (const h of pastData.horses) map[h.horse_id] = h.records;
+          setPastByHorse(map);
+        } else {
+          setPastByHorse({});
+        }
+        if (pedData) {
+          const pmap: Record<string, HorsePedigree> = {};
+          for (const h of pedData.horses) pmap[h.horse_id] = h;
+          setPedigreeByHorse(pmap);
+        } else {
+          setPedigreeByHorse({});
+        }
       } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "データの取得に失敗しました");
@@ -345,7 +372,12 @@ export default function RaceDetailPage({
       )}
 
       {/* Entries / Results */}
-      <EntryTable entries={race.entries} isUpcoming={isUpcoming} />
+      <EntryTable
+        entries={race.entries}
+        isUpcoming={isUpcoming}
+        pastByHorse={pastByHorse}
+        pedigreeByHorse={pedigreeByHorse}
+      />
 
       {/* Link to simulation page */}
       <div className="flex justify-center">

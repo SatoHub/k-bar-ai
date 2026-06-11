@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -101,6 +101,168 @@ async def get_race_detail(session: AsyncSession, race_id: str) -> Race | None:
     )
     result = await session.execute(query)
     return result.scalar_one_or_none()
+
+
+async def get_past_performances(
+    session: AsyncSession, race_id: str, limit_per_horse: int = 5
+) -> dict | None:
+    """Return the most recent N past races for every horse in a race (馬柱).
+
+    Uses a single windowed query (ROW_NUMBER partitioned by horse) to avoid
+    N+1 queries across up to 18 horses.
+    """
+    race = (
+        await session.execute(select(Race).where(Race.race_id == race_id))
+    ).scalar_one_or_none()
+    if not race:
+        return None
+
+    entry_rows = (
+        await session.execute(
+            select(RaceEntry.horse_id, RaceEntry.post_position).where(
+                RaceEntry.race_id == race.id
+            )
+        )
+    ).all()
+    horse_ids = [r[0] for r in entry_rows]
+    post_by_horse = {r[0]: r[1] for r in entry_rows}
+    if not horse_ids:
+        return {"race_id": race_id, "horses": []}
+
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=RaceEntry.horse_id,
+            order_by=(Race.race_date.desc(), Race.race_number.desc()),
+        )
+        .label("rn")
+    )
+    subq = (
+        select(
+            RaceEntry.horse_id.label("horse_id"),
+            Race.race_id.label("p_race_id"),
+            Race.race_date,
+            Race.racecourse_name,
+            Race.race_number,
+            Race.race_name,
+            Race.graded_race,
+            Race.surface,
+            Race.distance_m,
+            Race.track_condition,
+            Race.head_count,
+            RaceEntry.bracket_number,
+            RaceEntry.post_position,
+            RaceEntry.finish_position,
+            RaceEntry.finish_note,
+            RaceEntry.total_time_tenths,
+            RaceEntry.last_3f_time,
+            RaceEntry.margin,
+            RaceEntry.corner_pos_1,
+            RaceEntry.corner_pos_2,
+            RaceEntry.corner_pos_3,
+            RaceEntry.corner_pos_4,
+            RaceEntry.win_odds,
+            RaceEntry.win_favorite,
+            RaceEntry.weight_carried_kg,
+            RaceEntry.horse_weight_kg,
+            RaceEntry.horse_weight_diff,
+            Jockey.name.label("jockey_name"),
+            rn,
+        )
+        .join(Race, RaceEntry.race_id == Race.id)
+        .outerjoin(Jockey, RaceEntry.jockey_id == Jockey.id)
+        .where(RaceEntry.horse_id.in_(horse_ids))
+        .where(Race.race_date < race.race_date)
+        .subquery()
+    )
+    query = (
+        select(subq)
+        .where(subq.c.rn <= limit_per_horse)
+        .order_by(subq.c.horse_id, subq.c.rn)
+    )
+    rows = (await session.execute(query)).all()
+
+    by_horse: dict = {}
+    for row in rows:
+        m = row._mapping
+        corners = []
+        for key in ("corner_pos_1", "corner_pos_2", "corner_pos_3", "corner_pos_4"):
+            c = (m[key] or "").strip()
+            if c.endswith(".0"):
+                c = c[:-2]
+            if c:
+                corners.append(c)
+        corner_passing = "-".join(corners) or None
+        record = {
+            "race_id": m["p_race_id"],
+            "race_date": m["race_date"],
+            "racecourse_name": m["racecourse_name"],
+            "race_number": m["race_number"],
+            "race_name": m["race_name"],
+            "graded_race": m["graded_race"],
+            "surface": m["surface"],
+            "distance_m": m["distance_m"],
+            "track_condition": m["track_condition"],
+            "field_size": m["head_count"],
+            "bracket_number": m["bracket_number"],
+            "post_position": m["post_position"],
+            "finish_position": m["finish_position"],
+            "finish_note": m["finish_note"],
+            "total_time_tenths": m["total_time_tenths"],
+            "last_3f_time": m["last_3f_time"],
+            "margin": m["margin"],
+            "corner_passing": corner_passing,
+            "win_odds": m["win_odds"],
+            "win_favorite": m["win_favorite"],
+            "weight_carried_kg": m["weight_carried_kg"],
+            "horse_weight_kg": m["horse_weight_kg"],
+            "horse_weight_diff": m["horse_weight_diff"],
+            "jockey_name": m["jockey_name"],
+        }
+        by_horse.setdefault(m["horse_id"], []).append(record)
+
+    horses = [
+        {
+            "horse_id": hid,
+            "post_position": post_by_horse.get(hid),
+            "records": by_horse.get(hid, []),
+        }
+        for hid in horse_ids
+    ]
+    return {"race_id": race_id, "horses": horses}
+
+
+async def get_race_pedigree(session: AsyncSession, race_id: str) -> dict | None:
+    """Return sire / dam / broodmare-sire for every horse in a race (血統).
+
+    Sourced from JRA-VAN (NL_UM) via the ``jravan.v_pedigree`` FDW view, joined
+    on netkeiba_id = kettonum. Degrades gracefully: horses without JV-Data
+    pedigree (or if the FDW link is unavailable) return null fields.
+    """
+    race = (
+        await session.execute(select(Race).where(Race.race_id == race_id))
+    ).scalar_one_or_none()
+    if not race:
+        return None
+
+    sql = text(
+        """
+        SELECT h.id AS horse_id, e.post_position,
+               p.sire, p.dam, p.broodmare_sire, p.paternal_grandsire
+        FROM race_entries e
+        JOIN horses h ON h.id = e.horse_id
+        LEFT JOIN jravan.v_pedigree p ON p.netkeiba_id = h.netkeiba_id
+        WHERE e.race_id = :rid
+        ORDER BY e.post_position NULLS LAST
+        """
+    )
+    try:
+        rows = (await session.execute(sql, {"rid": race.id})).mappings().all()
+        horses = [dict(r) for r in rows]
+    except Exception:
+        # FDW link to kbar_jravan unavailable — return empty rather than 500.
+        horses = []
+    return {"race_id": race_id, "horses": horses}
 
 
 async def get_latest_odds(session: AsyncSession, race_id_str: str) -> dict | None:

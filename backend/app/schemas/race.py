@@ -157,6 +157,66 @@ class OddsTableResponse(BaseModel):
     combos: list[OddsComboEntry] = []
 
 
+# --- Past performance (馬柱) schemas ---
+
+
+class PastRaceRecord(BaseModel):
+    """A single past race for a horse (one column of the 馬柱)."""
+
+    race_id: str
+    race_date: datetime.date
+    racecourse_name: str | None = None
+    race_number: int | None = None
+    race_name: str | None = None
+    graded_race: str | None = None
+    surface: str | None = None
+    distance_m: int | None = None
+    track_condition: str | None = None
+    field_size: int | None = None  # 頭数
+    bracket_number: int | None = None
+    post_position: int | None = None
+    finish_position: int | None = None
+    finish_note: str | None = None
+    total_time_tenths: int | None = None
+    last_3f_time: Decimal | None = None
+    margin: str | None = None
+    corner_passing: str | None = None  # 通過順 "5-5-3-2"
+    win_odds: Decimal | None = None
+    win_favorite: int | None = None
+    weight_carried_kg: Decimal | None = None
+    horse_weight_kg: int | None = None
+    horse_weight_diff: int | None = None
+    jockey_name: str | None = None
+
+
+class HorsePastPerformances(BaseModel):
+    horse_id: uuid.UUID
+    post_position: int | None = None
+    records: list[PastRaceRecord] = []
+
+
+class PastPerformancesResponse(BaseModel):
+    race_id: str
+    horses: list[HorsePastPerformances] = []
+
+
+# --- Pedigree (血統) schemas ---
+
+
+class HorsePedigree(BaseModel):
+    horse_id: uuid.UUID
+    post_position: int | None = None
+    sire: str | None = None  # 父
+    dam: str | None = None  # 母
+    broodmare_sire: str | None = None  # 母父
+    paternal_grandsire: str | None = None  # 父父
+
+
+class RacePedigreeResponse(BaseModel):
+    race_id: str
+    horses: list[HorsePedigree] = []
+
+
 # --- Aptitude schemas ---
 
 

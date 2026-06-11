@@ -13,14 +13,18 @@ from app.schemas.race import (
     OddsHistoryResponse,
     OddsResponse,
     OddsTableResponse,
+    PastPerformancesResponse,
     RaceDetail,
     RaceListResponse,
+    RacePedigreeResponse,
 )
 from app.services.horse_service import get_course_aptitude_bulk
 from app.services.race_service import (
     get_latest_odds,
     get_odds_history,
+    get_past_performances,
     get_race_detail,
+    get_race_pedigree,
     get_races,
 )
 
@@ -69,6 +73,30 @@ async def get_race(race_id: str, session: AsyncSession = Depends(get_session)):
     if not race:
         raise HTTPException(status_code=404, detail="Race not found")
     return race
+
+
+@router.get("/{race_id}/past-performances", response_model=PastPerformancesResponse)
+async def get_race_past_performances(
+    race_id: str,
+    limit: int = Query(5, ge=1, le=10, description="Past races per horse"),
+    session: AsyncSession = Depends(get_session),
+):
+    """過去走（馬柱）: 各出走馬の現レースより前の直近N走を返す。"""
+    result = await get_past_performances(session, race_id, limit_per_horse=limit)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return result
+
+
+@router.get("/{race_id}/pedigree", response_model=RacePedigreeResponse)
+async def get_race_pedigree_endpoint(
+    race_id: str, session: AsyncSession = Depends(get_session)
+):
+    """血統: 各出走馬の父/母/母父（JRA-VAN NL_UM をFDW経由で突合）。"""
+    result = await get_race_pedigree(session, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return result
 
 
 @router.get("/{race_id}/odds", response_model=OddsResponse)
