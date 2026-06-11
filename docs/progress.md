@@ -1,10 +1,95 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-10（夕方：馬券UI改善5件を本番反映 / 流し全方式・買い目別オッズ・枠色バッジ）
+**最終更新:** 2026-06-11（JRA-VAN本番DB化完了：確定オッズ込みでPostgreSQL kbar_jravanへ／日次同期自動化）
 
 ---
 
-## 🟢 2026-06-10（夕方）セッション成果 ＝ 馬券UI改善（最新・ここを最初に読む）
+## 🟢 2026-06-11 セッション成果 ＝ JRA-VAN本番DB化（最新・ここを最初に読む）
+
+> **今日やったこと:** JRA-VANデータを確定オッズ込みでPostgreSQL(`kbar_jravan`)へ本番投入し、
+> 日次自動同期までを完成。途中、jrvltsqlの**致命バグを特定・修正**して取得を完走させた。
+
+### 完了した4ステップ
+1. **`kbar_jravan` DB作成** — `kbar-postgres`(localhost:5432)内、アプリDB`kbar`と分離。74テーブル作成。
+2. **PostgreSQL接続検証** — config.yamlの`database`を`${POSTGRES_DATABASE:kbar_jravan}`に環境変数化。
+3. **確定オッズ込み本番フル取得** — `fetch --spec RACE --option 1 --db postgresql`で
+   2026-05-09〜06-07の**312レース**を投入（**1,344,842件・Failed=0**）。
+   NL_RA(312)/NL_SE(4448)/NL_HR(312,全レース払戻あり)/NL_O1〜O6(確定オッズ)が揃った。
+4. **日次同期の自動化** — `jravan_sync.bat`をPostgreSQL向けに書換え、Windowsタスクスケジューラに
+   「KBar JRA-VAN Daily Sync」を**毎朝6:30**で登録。end-to-end検証済み
+   （RACE 218,200件＋DIFN 4,601件・Failed=0）。`--days-back 7`で実行漏れも翌日補完。
+
+### 🔴 重要バグ修正（jrvltsql本体・再clone時に再適用が必要）
+> `backend/jravan/jrvltsql/` は`.gitignore`済み＝git管理外。下記パッチは**再cloneで消える**。
+> 詳細は `backend/jravan/jrvltsql-setup.md` 冒頭「§0 再clone時に必ず再適用するローカルパッチ」参照。
+- **パッチA（必須）:** `src/jvlink/wrapper.py` の `jv_read()` が、本来`fetcher/base.py`が
+  「破損ファイル削除→続行」で回復できる**JVRead -402/-403等も即raise**し、本番取得が途中
+  クラッシュしていた。→ 回復可能コードは`return result, None, filename_str`する分岐を追加。
+- **パッチB:** config.yamlの取込先DBを環境変数化（上記2）。
+- **実行時の注意:** `PYTHONUTF8=1` 必須（cp932コンソールだとログの`—`等で`UnicodeEncodeError`クラッシュ）。
+  `.bat`は**ASCII限定＋CRLF**で書くこと（cmd.exeはOEMコードページで読むため日本語UTF-8は文字化け誤実行）。
+
+### ✅ ID突合 完了（2026-06-11・決定的マッピング実証＋FDW実装）
+**結論: 確率的マッチ不要・完全一致キーで突合できる**（netkeiba IDがJRA公式コード由来のため）。
+- **レース突合**: `race_id = 年‖lpad(JyoCD,2)‖lpad(回次,2)‖lpad(日次,2)‖lpad(R,2)` = アプリ`races.race_id`
+  → 2026-02-21/22で **72/72 完全一致**（ミスマッチ0）
+- **競走馬突合**: JV-Data `NL_SE.kettonum`(血統登録番号) = アプリ`horses.netkeiba_id`
+  → **1027/1027 完全一致**
+- ⚠️ アプリ`races.racecourse_code`は**空**。競馬場コードはrace_id内に埋込（上式で対応）
+- ⚠️ アプリDBは〜2026-03-01、JV-Dataは2026-05-09〜で**日付が現状非重複**。検証用に2月週末を別途取得済み
+
+**実装（postgres_fdw・同一PG内別DBを結合）**: `backend/jravan/sql/jravan_fdw_mapping.sql`
+- アプリDB`kbar`に`jravan`スキーマ＋外部テーブル（FDWで`kbar_jravan`参照）
+- `jravan.build_race_id()` 関数 / `jravan.v_confirmed_payouts`（払戻・race_idキー）/
+  `jravan.v_confirmed_win_odds`（確定単勝・race_id+馬番キー）
+- 検証: アプリ races×払戻 = **72/72**、馬レベルのオッズJOINも実値一致（メビウスロマンス2.9倍等）
+- カバレッジ: 498レース中 払戻384(77%) / 確定単勝オッズ156(31%)
+- 適用: `docker exec -i kbar-postgres psql -U kbar -d kbar < backend/jravan/sql/jravan_fdw_mapping.sql`
+
+### 次にやること（JRA-VAN活用フェーズの続き）
+- [ ] **O1確定オッズのカバレッジ改善**（datakubun=5の取得が部分的＝31%。`fetch --spec O1`等の追加取得を検討）
+- [ ] 突合を使い`NL_SE`/`NL_RA`の正確データ＋確定オッズで学習データセットを補強→モデル再学習
+- [ ] アプリのレース詳細/結果ページで確定払戻・確定オッズをJV-Data由来で表示（FDWビュー利用）
+- [ ] VPS本番への展開（現状ローカルのみ。FDWは自宅PCのkbar_jravanに依存→転送方式を設計）
+- [ ] （任意）過去2021〜2026ヒストリカル一括取得（重い・契約3ヶ月の時計に注意）
+
+### 優先項目（ユーザー指定・1から順に）
+1. ✅ **ID突合**（上記・完了）
+2. ✅ **過去5走の馬柱**（2026-06-11完了）
+   - backend: `GET /races/{race_id}/past-performances?limit=5`（`race_service.get_past_performances`、
+     ウィンドウ関数ROW_NUMBERで全出走馬の現レース日より前の直近N走を1クエリ取得＝N+1回避）
+   - schema: `PastRaceRecord`/`HorsePastPerformances`/`PastPerformancesResponse`（schemas/race.py）
+   - frontend: `EntryTable.tsx`に折りたたみ馬柱（`pastByHorse`プロップ、`PastRacesPanel`、全開閉ボタン）。
+     レース詳細ページで並行fetch（`fetchPastPerformances`）。tsc型クリーン
+   - データ源=アプリDB自身の過去race_entries+races。実値検証OK（200909010710で着順/上3F/通過/オッズ取得）
+   - 注: 3歳新馬等は過去走なし→空表示。古いレースはhead_count(頭数)欠損あり
+3. ✅ **全8券種オッズタブ**（既実装と判明）: `AllOddsTabs.tsx`がレース詳細(page.tsx:344)で全8券種
+   レンダリング済み。`GET /races/{id}/odds/table`は確定オッズ(status=result)を返す。上の単勝テーブルは
+   「ライブ単勝＋更新ボタン＋変動グラフ」で役割が異なり重複ではない→現状維持
+4. [後回し] **馬場状態（含水率・クッション値）** ＝ ⚠️**ユーザー判断で後回し**:
+   - JV-Data DataLabには**含水率・クッション値が無い**（馬場はコード=良/稍重/重/不良のみ。`nl_wf`はWIN5）
+   - 含水率・クッション値はJRA公式「馬場情報」(jra.go.jp/keiba/baba/)のみ＝**新規スクレイパー必要・開催日のみ・過去遡及不可**
+   - 再開時は専用スクレイパー新設から。本日(木)は実データ検証不可のため見送り
+
+### ✅ 血統（父/母/母父）表示（2026-06-11・#4の代替として実装）
+本日のFDW突合を活用。JV-Data NL_UM(3代血統)を `jravan.v_pedigree`（父=ketto3infobamei1/
+母=2/父父=3/母父=5）でビュー化し、`netkeiba_id=kettonum`でアプリhorsesと突合。
+- backend: `GET /races/{race_id}/pedigree`（`race_service.get_race_pedigree`、text SQLでFDWビューJOIN・
+  FDW不通時は空でグレースフル）。schema `HorsePedigree`/`RacePedigreeResponse`
+- frontend: `fetchPedigree`、EntryTableの馬名下に「父 / 母父」小字表示（`pedigreeByHorse`プロップ）
+- 実値OK（サトノクラウン/母父ネオユニヴァース等）。**カバレッジ257/1027(25%)**＝`fetch --spec RACE`は
+  UM馬マスタを含まずNL_UMがDIFN同期分のみのため。**改善策: DIFF/UM一括取得**（daily DIFN同期で漸増）
+- SQLは `backend/jravan/sql/jravan_fdw_mapping.sql` に追記（nl_um外部テーブル＋v_pedigree）
+
+### 主要ファイル早見表（JRA-VAN）
+- `backend/jravan/jravan_sync.bat` — 日次同期ラッパー（PostgreSQL向け・.gitignore済み）
+- `backend/jravan/jrvltsql-setup.md` — 導入手順＋再cloneパッチ（§0必読）
+- `backend/jravan/jrvltsql/` — jrvltsql本体（git管理外）。DB=`kbar_jravan` user=`kbar`
+- 取得コマンド: `python -m src.cli.main fetch --from YYYYMMDD --to YYYYMMDD --spec RACE --option 1 --db postgresql --no-cache`
+
+---
+
+## 🟢 2026-06-10（夕方）セッション成果 ＝ 馬券UI改善
 
 > **今日やったこと:** 馬券まわりのUI/UXを5件改善し、すべて本番反映済み（GitHub Actions自動デプロイ成功）。
 > バックエンド変更なし、フロントエンド（`frontend/src/`）のみ。最終コミット `a10b62b`。
