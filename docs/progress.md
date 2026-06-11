@@ -1,10 +1,41 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-11（JRA-VAN本番DB化完了：確定オッズ込みでPostgreSQL kbar_jravanへ／日次同期自動化）
+**最終更新:** 2026-06-11（JRA-VAN本番DB化＋ID突合＋馬柱/血統/オッズ枠色バッジを実装・本番反映）
 
 ---
 
-## 🟢 2026-06-11 セッション成果 ＝ JRA-VAN本番DB化（最新・ここを最初に読む）
+## 🔵 次回開始ガイド（RESUME HERE — まずここを読む）
+
+### 今日(2026-06-11)の到達点（すべて本番反映・git push済み / 最新コミット `ec97566`）
+- ✅ **JRA-VAN本番DB化**: `kbar_jravan`へ確定オッズ込み312レース・134万件投入。日次同期12:00自動化
+- ✅ **ID突合**: レース72/72・馬1027/1027の決定的マッピング＋FDW実装（`backend/jravan/sql/jravan_fdw_mapping.sql`）
+- ✅ **過去5走の馬柱**（本番動作確認済み）/ **血統(父/母父)** / **全8券種オッズの枠色バッジ化**
+- git: 作業ツリーclean・全push済み。バックエンドはローカルで起動中(port 8000)の可能性あり
+
+### 次回やること（優先度順）★ここから再開
+1. 🔴 **血統を本番でも表示できるようにする**（今は本番で空欄＝FDW/kbar_jravanが自宅PC専用のため）
+   - (a) 自宅PCで **DIFF/UM一括取得** → 血統カバレッジを25%→ほぼ100%へ
+     （`fetch --spec RACE`はUM馬マスタ非含有。`fetch --spec DIFF --option 3`等。詳細は本ファイル下部）
+   - (b) **VPSへJV-Data由来データの転送方式を設計**（FDWは自宅PC依存。血統だけ抽出しVPSのアプリDBへ同期する等）
+2. 🔴 **確定単勝オッズのカバレッジ改善**（O1 datakubun=5が31%。`fetch --spec O1`追加取得を検討）
+3. 🟡 **ID突合データでモデル再学習**（JV-Dataの正確データ＋確定オッズを特徴量化）
+4. 🟡 **④ 馬場状態（含水率・クッション値）**＝JRA公式「馬場情報」ページ専用→新規スクレイパー新設（開催日のみ）
+5. 🟢 運用: 旧PAT `ghp_a2SL...` のRevoke / deploy.ymlのpull失敗検知(`set -e`等・未対応)
+
+### 再開コマンド（環境起動・JRA-VAN取得）
+```powershell
+# 自宅PCでJRA-VAN取得する場合（32bit venv・PYTHONUTF8必須）
+$env:PYTHONUTF8="1"; $env:POSTGRES_HOST="127.0.0.1"; $env:POSTGRES_PORT="5432"
+$env:POSTGRES_DATABASE="kbar_jravan"; $env:POSTGRES_USER="kbar"; $env:POSTGRES_PASSWORD="kbar_dev_password"
+cd C:\Users\unoen\projects\k-bar-ai\backend\jravan\jrvltsql
+..\.venv32\Scripts\python.exe -m src.cli.main fetch --from YYYYMMDD --to YYYYMMDD --spec RACE --option 1 --db postgresql --no-cache
+```
+- FDWマッピング再適用: `docker exec -i kbar-postgres psql -U kbar -d kbar < backend/jravan/sql/jravan_fdw_mapping.sql`
+- ⚠️ jrvltsql再clone時は `jrvltsql-setup.md` §0 のパッチ(JVRead -402/-403回復)を必ず再適用
+
+---
+
+## 🟢 2026-06-11 セッション成果 ＝ JRA-VAN本番DB化（詳細）
 
 > **今日やったこと:** JRA-VANデータを確定オッズ込みでPostgreSQL(`kbar_jravan`)へ本番投入し、
 > 日次自動同期までを完成。途中、jrvltsqlの**致命バグを特定・修正**して取得を完走させた。
