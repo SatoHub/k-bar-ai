@@ -8,6 +8,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { fetchOddsTable, type RaceEntry, type OddsComboEntry } from "@/lib/api";
+import ComboBadges from "@/components/ComboBadges";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", single: true, ordered: false, isWaku: false },
@@ -87,18 +88,29 @@ export default function AllOddsTabs({ raceIdStr, entries }: Props) {
     return list;
   }, [combos]);
 
-  function formatCombo(key: string): string {
-    const parts = key.split("-").map((p) => String(parseInt(p, 10)));
-    if (def.isWaku) return parts.map((p) => `${p}枠`).join(" - ");
-    return parts.join(def.ordered ? " → " : " - ");
+  // 組み合わせキーは「ゼロ埋め2桁の馬番(枠番)を区切り無しで連結」
+  // 例: 単勝"03" / 馬連・馬単"0307" / 三連単"010203"。2桁ずつに分解する。
+  function parseCombo(key: string): number[] {
+    const out: number[] = [];
+    for (let i = 0; i + 2 <= key.length; i += 2) {
+      out.push(parseInt(key.slice(i, i + 2), 10));
+    }
+    return out;
   }
 
-  function comboNames(key: string): string {
-    if (def.isWaku) return "";
-    return key
-      .split("-")
-      .map((p) => postToName.get(parseInt(p, 10)) ?? "—")
-      .join(def.ordered ? " → " : " / ");
+  // ComboBadges 用の引数（枠連=枠番文字列 / それ以外=horse.id 文字列）に変換
+  function comboToBadgeArg(key: string): string[] {
+    const nums = parseCombo(key);
+    if (def.isWaku) return nums.map((n) => String(n));
+    return nums.map(
+      (n) => entries.find((e) => e.post_position === n)?.horse.id ?? `#${n}`,
+    );
+  }
+
+  // 単勝/複勝の馬名（1頭のみ）
+  function singleName(key: string): string {
+    const nums = parseCombo(key);
+    return nums.map((n) => postToName.get(n) ?? "—").join(" / ");
   }
 
   function oddsText(c: OddsComboEntry): string {
@@ -186,7 +198,7 @@ export default function AllOddsTabs({ raceIdStr, entries }: Props) {
                   style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text-secondary)" }}
                 >
                   <th className="px-3 py-2">{def.isWaku ? "枠" : def.single ? "馬番" : "組み合わせ"}</th>
-                  {!def.isWaku && <th className="px-3 py-2">馬名</th>}
+                  {def.single && <th className="px-3 py-2">馬名</th>}
                   <th className="px-3 py-2 text-right">オッズ</th>
                   <th className="px-3 py-2 text-center">人気</th>
                 </tr>
@@ -194,15 +206,18 @@ export default function AllOddsTabs({ raceIdStr, entries }: Props) {
               <tbody>
                 {shown.map((c) => (
                   <tr key={c.combo} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td
-                      className="px-3 py-2 font-medium tabular-nums"
-                      style={{ color: "var(--text-primary)" }}
-                    >
-                      {formatCombo(c.combo)}
+                    <td className="px-3 py-2">
+                      <ComboBadges
+                        combo={comboToBadgeArg(c.combo)}
+                        entries={entries}
+                        isWaku={def.isWaku}
+                        ordered={def.ordered}
+                        size="sm"
+                      />
                     </td>
-                    {!def.isWaku && (
+                    {def.single && (
                       <td className="px-3 py-2" style={{ color: "var(--text-secondary)" }}>
-                        {comboNames(c.combo)}
+                        {singleName(c.combo)}
                       </td>
                     )}
                     <td
