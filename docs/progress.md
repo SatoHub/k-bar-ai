@@ -1,24 +1,42 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-11（JRA-VAN本番DB化＋ID突合＋馬柱/血統/オッズ枠色バッジを実装・本番反映）
+**最終更新:** 2026-06-12（血統・確定オッズ/払戻を自己完結テーブル化しVPS本番表示を達成。#3モデル再学習が次）
 
 ---
 
 ## 🔵 次回開始ガイド（RESUME HERE — まずここを読む）
 
-### 今日(2026-06-11)の到達点（すべて本番反映・git push済み / 最新コミット `ec97566`）
-- ✅ **JRA-VAN本番DB化**: `kbar_jravan`へ確定オッズ込み312レース・134万件投入。日次同期12:00自動化
-- ✅ **ID突合**: レース72/72・馬1027/1027の決定的マッピング＋FDW実装（`backend/jravan/sql/jravan_fdw_mapping.sql`）
-- ✅ **過去5走の馬柱**（本番動作確認済み）/ **血統(父/母父)** / **全8券種オッズの枠色バッジ化**
-- git: 作業ツリーclean・全push済み。バックエンドはローカルで起動中(port 8000)の可能性あり
+### 今日(2026-06-12)の到達点（git push済み / 最新コミット `3a179a2`）
+**共通設計＝「JV-Data由来データを自己完結テーブル化→pg_dumpでVPS同期」（FDW非依存）。**
+本番racesは2/21〜6/14でJV-Data(5/9〜)と日付が重なるため race_id/netkeiba_id で結合可能。
+同期は `backend/jravan/sync_jravan_derived_to_vps.sh`（血統+確定オッズ+払戻の3表を一括・冪等）。
+
+- ✅ **#1 血統の本番表示を達成**: 自己完結テーブル `horse_pedigree`(`netkeiba_id=kettonum`キー)。
+  エンドポイントをFDW直結→ローカルテーブル参照に変更。本番で血統表示を実証
+  (race 202610011106・ハービンジャー等8頭)。alembic `e5f6a7b8c901`。
+  populate=`sql/populate_horse_pedigree.sql`(2729件)
+  - ⚠️ **カバレッジ現状2729頭(直近26%)**。`option 1`(差分)では日付非重複の壁で増えない。
+    UM全馬セットアップ(`--spec DIFF --option 3/4`)が唯一の根本解。後日→populate再実行→再syncで向上
+- ✅ **#2 確定オッズ・払戻の本番表示を達成**: 自己完結テーブル `confirmed_win_odds`/`confirmed_payouts`
+  (race_idキー・アプリraces非依存)。API `GET /races/{id}/confirmed`、フロント `ConfirmedResults.tsx`
+  (払戻を枠色バッジ+確定単勝オッズ表)をレース詳細に追加。本番で実証(race 202604010301・払戻/オッズ)。
+  alembic `f6a7b8c9d012`、populate=`sql/populate_confirmed_jravan.sql`
+  - 🔴 **重要発見**: 「31%」は前日の古い計測(ローカルアプリDB 3/1止まり×JV-Data 5/9〜の非重複)。
+    O1確定オッズ取得自体は本体期間99%機能。**単独`--spec O1`は契約上不可(JVOpen -111)**。
+    ただし**RACE再取得で確定オッズは回復可能**と実証(5/30が0→24/24)。本体5/9〜6/7のRACE再取得を実行中
+    (現状156→順次回復)。完了後 populate_confirmed_jravan.sql 再実行→再sync で本番カバレッジUP
+- ⚠️ **本番APIはBasic認証**(`-u admin:kbar2026ai`)。疎通確認時は付与すること
+- ⚠️ **uvicorn --reloadは重い**(scheduler起動)。プロセス二重化・孤立ワーカーに注意(継承ソケット)。
+  ローカルは `uv run uvicorn app.main:app --port 8000`(reloadなし)推奨
+
+### 前日(2026-06-11)の到達点（コミット `ec97566`）
+- ✅ JRA-VAN本番DB化 / ID突合(レース72/72・馬1027/1027) / 過去5走馬柱 / 全8券種オッズ枠色バッジ
 
 ### 次回やること（優先度順）★ここから再開
-1. 🔴 **血統を本番でも表示できるようにする**（今は本番で空欄＝FDW/kbar_jravanが自宅PC専用のため）
-   - (a) 自宅PCで **DIFF/UM一括取得** → 血統カバレッジを25%→ほぼ100%へ
-     （`fetch --spec RACE`はUM馬マスタ非含有。`fetch --spec DIFF --option 3`等。詳細は本ファイル下部）
-   - (b) **VPSへJV-Data由来データの転送方式を設計**（FDWは自宅PC依存。血統だけ抽出しVPSのアプリDBへ同期する等）
-2. 🔴 **確定単勝オッズのカバレッジ改善**（O1 datakubun=5が31%。`fetch --spec O1`追加取得を検討）
-3. 🟡 **ID突合データでモデル再学習**（JV-Dataの正確データ＋確定オッズを特徴量化）
+1. ✅ **血統を本番でも表示**（2026-06-12完了。(a)カバレッジ向上=UMセットアップ時に後日）
+2. ✅ **確定オッズ・払戻を本番でも表示**（2026-06-12完了。RACE再取得でオッズカバレッジ向上中）
+   - ⏳ 残: 再取得完了後に `populate_confirmed_jravan.sql` 再実行→`sync_jravan_derived_to_vps.sh` 再同期
+3. 🟡 **ID突合データでモデル再学習**（JV-Dataの正確データ＋確定オッズを特徴量化）← 次はここ
 4. 🟡 **④ 馬場状態（含水率・クッション値）**＝JRA公式「馬場情報」ページ専用→新規スクレイパー新設（開催日のみ）
 5. 🟢 運用: 旧PAT `ghp_a2SL...` のRevoke / deploy.ymlのpull失敗検知(`set -e`等・未対応)
 
