@@ -217,6 +217,41 @@ class RacePedigreeResponse(BaseModel):
     horses: list[HorsePedigree] = []
 
 
+# --- Confirmed (JV-Data) odds & payouts schemas ---
+
+
+class ConfirmedWinOdds(BaseModel):
+    umaban: int  # 馬番
+    win_odds: float | None = None  # 確定単勝オッズ
+    win_favorite: int | None = None  # 確定単勝人気
+
+
+class ConfirmedPayouts(BaseModel):
+    runners: int | None = None
+    tan_umaban: str | None = None
+    tan_pay: int | None = None
+    tan_ninki: int | None = None
+    fuku_umaban: str | None = None
+    fuku_pay: int | None = None
+    fuku_ninki: int | None = None
+    umaren_kumi: str | None = None
+    umaren_pay: int | None = None
+    wide_kumi: str | None = None
+    wide_pay: int | None = None
+    umatan_kumi: str | None = None
+    umatan_pay: int | None = None
+    sanrenfuku_kumi: str | None = None
+    sanrenfuku_pay: int | None = None
+    sanrentan_kumi: str | None = None
+    sanrentan_pay: int | None = None
+
+
+class ConfirmedDataResponse(BaseModel):
+    race_id: str
+    win_odds: list[ConfirmedWinOdds] = []  # 確定単勝オッズ（馬番順）
+    payouts: ConfirmedPayouts | None = None  # 確定払戻（無ければnull）
+
+
 # --- Aptitude schemas ---
 
 

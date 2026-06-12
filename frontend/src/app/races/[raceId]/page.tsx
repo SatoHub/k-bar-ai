@@ -9,6 +9,7 @@ import {
   fetchOddsHistory,
   fetchPastPerformances,
   fetchPedigree,
+  fetchConfirmedData,
   refreshOdds,
   type RaceDetail,
   type RacePredictionResponse,
@@ -16,12 +17,14 @@ import {
   type OddsHistoryResponse,
   type PastRaceRecord,
   type HorsePedigree,
+  type ConfirmedDataResponse,
 } from "@/lib/api";
 import PredictionTable from "@/components/PredictionTable";
 import EntryTable from "@/components/EntryTable";
 import CourseInfoBadges from "@/components/CourseInfoBadges";
 import OddsChart from "@/components/OddsChart";
 import AllOddsTabs from "@/components/AllOddsTabs";
+import ConfirmedResults from "@/components/ConfirmedResults";
 
 export default function RaceDetailPage({
   params,
@@ -42,6 +45,7 @@ export default function RaceDetailPage({
   const [pedigreeByHorse, setPedigreeByHorse] = useState<
     Record<string, HorsePedigree>
   >({});
+  const [confirmed, setConfirmed] = useState<ConfirmedDataResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,20 +57,29 @@ export default function RaceDetailPage({
       setLoading(true);
       setError(null);
       try {
-        const [raceData, predData, oddsData, oddsHistData, pastData, pedData] =
-          await Promise.all([
-            fetchRaceDetail(raceId),
-            fetchPredictions(raceId).catch(() => null),
-            fetchOdds(raceId).catch(() => null),
-            fetchOddsHistory(raceId).catch(() => null),
-            fetchPastPerformances(raceId, 5).catch(() => null),
-            fetchPedigree(raceId).catch(() => null),
-          ]);
+        const [
+          raceData,
+          predData,
+          oddsData,
+          oddsHistData,
+          pastData,
+          pedData,
+          confData,
+        ] = await Promise.all([
+          fetchRaceDetail(raceId),
+          fetchPredictions(raceId).catch(() => null),
+          fetchOdds(raceId).catch(() => null),
+          fetchOddsHistory(raceId).catch(() => null),
+          fetchPastPerformances(raceId, 5).catch(() => null),
+          fetchPedigree(raceId).catch(() => null),
+          fetchConfirmedData(raceId).catch(() => null),
+        ]);
         if (cancelled) return;
         setRace(raceData);
         setPredictions(predData);
         setOdds(oddsData);
         setOddsHistory(oddsHistData);
+        setConfirmed(confData);
         if (pastData) {
           const map: Record<string, PastRaceRecord[]> = {};
           for (const h of pastData.horses) map[h.horse_id] = h.records;
@@ -352,6 +365,9 @@ export default function RaceDetailPage({
           </div>
         </div>
       )}
+
+      {/* 確定オッズ・払戻（JRA-VAN） */}
+      <ConfirmedResults confirmed={confirmed} entries={race.entries} />
 
       {/* 全券種オッズ（タブ） */}
       {race.entries.length > 0 && (

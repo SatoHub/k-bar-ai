@@ -9,6 +9,7 @@ from app.schemas.race import (
     AptitudeResponse,
     ComboOddsRequest,
     ComboOddsResponse,
+    ConfirmedDataResponse,
     OddsComboEntry,
     OddsHistoryResponse,
     OddsResponse,
@@ -20,6 +21,7 @@ from app.schemas.race import (
 )
 from app.services.horse_service import get_course_aptitude_bulk
 from app.services.race_service import (
+    get_confirmed_data,
     get_latest_odds,
     get_odds_history,
     get_past_performances,
@@ -94,6 +96,17 @@ async def get_race_pedigree_endpoint(
 ):
     """血統: 各出走馬の父/母/母父（JRA-VAN NL_UM をFDW経由で突合）。"""
     result = await get_race_pedigree(session, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return result
+
+
+@router.get("/{race_id}/confirmed", response_model=ConfirmedDataResponse)
+async def get_race_confirmed_endpoint(
+    race_id: str, session: AsyncSession = Depends(get_session)
+):
+    """確定オッズ・払戻: JV-Data由来の確定単勝オッズと確定払戻（自己完結テーブル）。"""
+    result = await get_confirmed_data(session, race_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Race not found")
     return result

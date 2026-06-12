@@ -442,6 +442,45 @@ export function fetchPedigree(raceId: string): Promise<RacePedigreeResponse> {
   return fetchJSON<RacePedigreeResponse>(`/races/${raceId}/pedigree`);
 }
 
+// Confirmed (JV-Data) odds & payouts — self-contained tables synced from JRA-VAN
+export type ConfirmedWinOdds = {
+  umaban: number;
+  win_odds: number | null;
+  win_favorite: number | null;
+};
+
+export type ConfirmedPayouts = {
+  runners: number | null;
+  tan_umaban: string | null;
+  tan_pay: number | null;
+  tan_ninki: number | null;
+  fuku_umaban: string | null;
+  fuku_pay: number | null;
+  fuku_ninki: number | null;
+  umaren_kumi: string | null;
+  umaren_pay: number | null;
+  wide_kumi: string | null;
+  wide_pay: number | null;
+  umatan_kumi: string | null;
+  umatan_pay: number | null;
+  sanrenfuku_kumi: string | null;
+  sanrenfuku_pay: number | null;
+  sanrentan_kumi: string | null;
+  sanrentan_pay: number | null;
+};
+
+export type ConfirmedDataResponse = {
+  race_id: string;
+  win_odds: ConfirmedWinOdds[];
+  payouts: ConfirmedPayouts | null;
+};
+
+export function fetchConfirmedData(
+  raceId: string,
+): Promise<ConfirmedDataResponse> {
+  return fetchJSON<ConfirmedDataResponse>(`/races/${raceId}/confirmed`);
+}
+
 export function fetchPredictions(
   raceId: string,
 ): Promise<RacePredictionResponse> {

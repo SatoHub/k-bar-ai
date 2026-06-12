@@ -263,6 +263,60 @@ async def get_race_pedigree(session: AsyncSession, race_id: str) -> dict | None:
     return {"race_id": race_id, "horses": horses}
 
 
+async def get_confirmed_data(session: AsyncSession, race_id: str) -> dict | None:
+    """Return JV-Data confirmed win odds + payouts for a race (確定オッズ・払戻).
+
+    Sourced from the self-contained confirmed_win_odds / confirmed_payouts
+    tables (keyed by netkeiba race_id), populated on the home PC from JV-Data
+    and synced to VPS. Works in production without any FDW link. Returns empty
+    lists / null when JV-Data has no confirmed data for the race yet.
+    """
+    race = (
+        await session.execute(select(Race).where(Race.race_id == race_id))
+    ).scalar_one_or_none()
+    if not race:
+        return None
+
+    odds_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT umaban, win_odds, win_favorite
+                FROM confirmed_win_odds
+                WHERE race_id = :rid
+                ORDER BY umaban
+                """
+            ),
+            {"rid": race_id},
+        )
+    ).mappings().all()
+
+    payout_row = (
+        await session.execute(
+            text("SELECT * FROM confirmed_payouts WHERE race_id = :rid"),
+            {"rid": race_id},
+        )
+    ).mappings().first()
+
+    payouts = None
+    if payout_row is not None:
+        payouts = {k: v for k, v in dict(payout_row).items() if k not in ("race_id", "updated_at")}
+
+    win_odds = []
+    for r in odds_rows:
+        d = dict(r)
+        # tanodds is stored as float32 (real); round to JV-Data's 1-decimal scale.
+        if d.get("win_odds") is not None:
+            d["win_odds"] = round(float(d["win_odds"]), 1)
+        win_odds.append(d)
+
+    return {
+        "race_id": race_id,
+        "win_odds": win_odds,
+        "payouts": payouts,
+    }
+
+
 async def get_latest_odds(session: AsyncSession, race_id_str: str) -> dict | None:
     """Get the latest odds snapshot for a race."""
     result = await session.execute(select(Race).where(Race.race_id == race_id_str))
