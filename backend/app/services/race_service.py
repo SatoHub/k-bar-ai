@@ -235,9 +235,11 @@ async def get_past_performances(
 async def get_race_pedigree(session: AsyncSession, race_id: str) -> dict | None:
     """Return sire / dam / broodmare-sire for every horse in a race (血統).
 
-    Sourced from JRA-VAN (NL_UM) via the ``jravan.v_pedigree`` FDW view, joined
-    on netkeiba_id = kettonum. Degrades gracefully: horses without JV-Data
-    pedigree (or if the FDW link is unavailable) return null fields.
+    Sourced from JRA-VAN (NL_UM) and stored in the self-contained
+    ``horse_pedigree`` table (keyed by netkeiba_id = kettonum). The table is
+    populated on the home PC from the jravan.v_pedigree FDW view and synced to
+    VPS as data, so this endpoint works in production without any FDW link.
+    Degrades gracefully: horses without pedigree return null fields.
     """
     race = (
         await session.execute(select(Race).where(Race.race_id == race_id))
@@ -251,17 +253,13 @@ async def get_race_pedigree(session: AsyncSession, race_id: str) -> dict | None:
                p.sire, p.dam, p.broodmare_sire, p.paternal_grandsire
         FROM race_entries e
         JOIN horses h ON h.id = e.horse_id
-        LEFT JOIN jravan.v_pedigree p ON p.netkeiba_id = h.netkeiba_id
+        LEFT JOIN horse_pedigree p ON p.netkeiba_id = h.netkeiba_id
         WHERE e.race_id = :rid
         ORDER BY e.post_position NULLS LAST
         """
     )
-    try:
-        rows = (await session.execute(sql, {"rid": race.id})).mappings().all()
-        horses = [dict(r) for r in rows]
-    except Exception:
-        # FDW link to kbar_jravan unavailable — return empty rather than 500.
-        horses = []
+    rows = (await session.execute(sql, {"rid": race.id})).mappings().all()
+    horses = [dict(r) for r in rows]
     return {"race_id": race_id, "horses": horses}
 
 
