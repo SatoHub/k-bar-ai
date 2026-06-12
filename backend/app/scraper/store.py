@@ -18,7 +18,16 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Horse, Jockey, OddsSnapshot, Race, RaceEntry, ScrapeLog, Trainer
+from app.models import (
+    Horse,
+    Jockey,
+    OddsSnapshot,
+    Race,
+    RaceEntry,
+    ScrapeLog,
+    TrackConditionDetail,
+    Trainer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -745,6 +754,61 @@ def store_result(result_data: dict) -> int:
             logger.info("Stored result %s: %d entries updated", race_id_str, count)
             return count
 
+        except Exception as e:
+            _log_finish(session, log_id, "error", 0, str(e))
+            session.commit()
+            raise
+
+
+def store_track_conditions(rows: list[dict], measured_date: datetime.date) -> int:
+    """Upsert scraped JRA 含水率・クッション値 rows for a given race day.
+
+    Each row: {racecourse_name, cushion_value, turf_moisture_goal,
+    turf_moisture_4c, dirt_moisture_goal, dirt_moisture_4c}. Keyed by
+    (racecourse_name, measured_date). Returns number of venues upserted.
+    """
+    if not rows:
+        return 0
+    engine = _get_engine()
+    count = 0
+    with Session(engine) as session:
+        log_id = _log_start(session, "baba", measured_date, None)
+        try:
+            for r in rows:
+                name = r.get("racecourse_name")
+                if not name:
+                    continue
+                values = {
+                    "id": uuid.uuid4(),
+                    "racecourse_name": name,
+                    "measured_date": measured_date,
+                    "cushion_value": r.get("cushion_value"),
+                    "turf_moisture_goal": r.get("turf_moisture_goal"),
+                    "turf_moisture_4c": r.get("turf_moisture_4c"),
+                    "dirt_moisture_goal": r.get("dirt_moisture_goal"),
+                    "dirt_moisture_4c": r.get("dirt_moisture_4c"),
+                    "scraped_at": datetime.datetime.utcnow(),
+                }
+                stmt = pg_insert(TrackConditionDetail).values(**values)
+                update_cols = {
+                    k: stmt.excluded[k]
+                    for k in (
+                        "cushion_value",
+                        "turf_moisture_goal",
+                        "turf_moisture_4c",
+                        "dirt_moisture_goal",
+                        "dirt_moisture_4c",
+                        "scraped_at",
+                    )
+                }
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_track_cond_course_date", set_=update_cols
+                )
+                session.execute(stmt)
+                count += 1
+            _log_finish(session, log_id, "success", count, None)
+            session.commit()
+            return count
         except Exception as e:
             _log_finish(session, log_id, "error", 0, str(e))
             session.commit()

@@ -18,6 +18,7 @@ from app.schemas.race import (
     RaceDetail,
     RaceListResponse,
     RacePedigreeResponse,
+    TrackConditionResponse,
 )
 from app.services.horse_service import get_course_aptitude_bulk
 from app.services.race_service import (
@@ -27,6 +28,7 @@ from app.services.race_service import (
     get_past_performances,
     get_race_detail,
     get_race_pedigree,
+    get_race_track_condition,
     get_races,
 )
 
@@ -107,6 +109,17 @@ async def get_race_confirmed_endpoint(
 ):
     """確定オッズ・払戻: JV-Data由来の確定単勝オッズと確定払戻（自己完結テーブル）。"""
     result = await get_confirmed_data(session, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return result
+
+
+@router.get("/{race_id}/track-condition", response_model=TrackConditionResponse)
+async def get_race_track_condition_endpoint(
+    race_id: str, session: AsyncSession = Depends(get_session)
+):
+    """馬場情報: 含水率・クッション値（JRA公式・開催日スクレイピング）。"""
+    result = await get_race_track_condition(session, race_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Race not found")
     return result

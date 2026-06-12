@@ -193,7 +193,18 @@ def register_jobs(
         replace_existing=True,
     )
 
-    job_count = 12
+    # 10b. Track condition (含水率・クッション値): race-day mornings/midday.
+    # Auto-skips on non-race days (baba index yields no venues).
+    scheduler.add_job(
+        job_track_condition,
+        CronTrigger(hour="9,12,14", minute=15, timezone=tz),
+        id="track_condition",
+        name="馬場情報取得(含水率・クッション値)",
+        kwargs={"manager": manager},
+        replace_existing=True,
+    )
+
+    job_count = 13
 
     # 11. JRA-VAN sync reminder: weekly (only when enabled).
     # Reminds the user to run the home-PC JV-Link sync (方式C).
@@ -603,6 +614,44 @@ async def job_results(manager: SchedulerManager) -> None:
     except Exception as e:
         logger.error("Results fetch failed: %s", e, exc_info=True)
         manager.record_job_run("results", status="error", detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Job: Track condition (JRA 含水率・クッション値)
+# ---------------------------------------------------------------------------
+
+
+async def job_track_condition(manager: SchedulerManager) -> None:
+    """Scrape JRA 含水率・クッション値 for today's racing venues.
+
+    The JRA official site only publishes these on race days and they are not
+    historically backfillable, so this runs on race-day mornings. Venues are
+    auto-discovered from the baba index; non-race days yield no venues (skip).
+    """
+    logger.info("=== Job: Track condition fetch starting ===")
+    try:
+        from app.scraper.jra_baba import JraBabaScraper
+        from app.scraper.store import store_track_conditions
+
+        today = _today_jst()
+        async with JraBabaScraper(headless=True) as s:
+            rows = await s.scrape_all_venues()
+
+        if not rows:
+            logger.info("No venues published (non-race day?), skipping")
+            manager.record_job_run(
+                "track_condition", status="skipped", detail="No venues published"
+            )
+            return
+
+        count = store_track_conditions(rows, today)
+        detail = f"{count} venues: {', '.join(r['racecourse_name'] for r in rows)}"
+        logger.info("Track condition fetch complete: %s", detail)
+        manager.record_job_run("track_condition", status="success", detail=detail)
+
+    except Exception as e:
+        logger.error("Track condition fetch failed: %s", e, exc_info=True)
+        manager.record_job_run("track_condition", status="error", detail=str(e))
 
 
 # ---------------------------------------------------------------------------

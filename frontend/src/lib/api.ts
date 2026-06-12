@@ -481,6 +481,29 @@ export function fetchConfirmedData(
   return fetchJSON<ConfirmedDataResponse>(`/races/${raceId}/confirmed`);
 }
 
+// Track condition (含水率・クッション値) — JRA official, scraped on race days
+export type TrackConditionDetailData = {
+  cushion_value: number | null;
+  turf_moisture_goal: number | null;
+  turf_moisture_4c: number | null;
+  dirt_moisture_goal: number | null;
+  dirt_moisture_4c: number | null;
+  scraped_at: string | null;
+};
+
+export type TrackConditionResponse = {
+  race_id: string;
+  racecourse_name: string | null;
+  track_condition: string | null;
+  detail: TrackConditionDetailData | null;
+};
+
+export function fetchTrackCondition(
+  raceId: string,
+): Promise<TrackConditionResponse> {
+  return fetchJSON<TrackConditionResponse>(`/races/${raceId}/track-condition`);
+}
+
 export function fetchPredictions(
   raceId: string,
 ): Promise<RacePredictionResponse> {

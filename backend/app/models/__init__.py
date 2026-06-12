@@ -12,6 +12,7 @@ from app.models.scrape_log import ScrapeLog
 from app.models.notification_log import NotificationLog
 from app.models.miss_reason import MissReasonLog
 from app.models.improvement_proposal import ImprovementProposal
+from app.models.track_condition_detail import TrackConditionDetail
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "NotificationLog",
     "MissReasonLog",
     "ImprovementProposal",
+    "TrackConditionDetail",
 ]

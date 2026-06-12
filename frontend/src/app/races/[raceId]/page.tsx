@@ -10,6 +10,7 @@ import {
   fetchPastPerformances,
   fetchPedigree,
   fetchConfirmedData,
+  fetchTrackCondition,
   refreshOdds,
   type RaceDetail,
   type RacePredictionResponse,
@@ -18,6 +19,7 @@ import {
   type PastRaceRecord,
   type HorsePedigree,
   type ConfirmedDataResponse,
+  type TrackConditionResponse,
 } from "@/lib/api";
 import PredictionTable from "@/components/PredictionTable";
 import EntryTable from "@/components/EntryTable";
@@ -25,6 +27,7 @@ import CourseInfoBadges from "@/components/CourseInfoBadges";
 import OddsChart from "@/components/OddsChart";
 import AllOddsTabs from "@/components/AllOddsTabs";
 import ConfirmedResults from "@/components/ConfirmedResults";
+import TrackConditionInfo from "@/components/TrackConditionInfo";
 
 export default function RaceDetailPage({
   params,
@@ -46,6 +49,7 @@ export default function RaceDetailPage({
     Record<string, HorsePedigree>
   >({});
   const [confirmed, setConfirmed] = useState<ConfirmedDataResponse | null>(null);
+  const [trackCond, setTrackCond] = useState<TrackConditionResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +69,7 @@ export default function RaceDetailPage({
           pastData,
           pedData,
           confData,
+          tcData,
         ] = await Promise.all([
           fetchRaceDetail(raceId),
           fetchPredictions(raceId).catch(() => null),
@@ -73,6 +78,7 @@ export default function RaceDetailPage({
           fetchPastPerformances(raceId, 5).catch(() => null),
           fetchPedigree(raceId).catch(() => null),
           fetchConfirmedData(raceId).catch(() => null),
+          fetchTrackCondition(raceId).catch(() => null),
         ]);
         if (cancelled) return;
         setRace(raceData);
@@ -80,6 +86,7 @@ export default function RaceDetailPage({
         setOdds(oddsData);
         setOddsHistory(oddsHistData);
         setConfirmed(confData);
+        setTrackCond(tcData);
         if (pastData) {
           const map: Record<string, PastRaceRecord[]> = {};
           for (const h of pastData.horses) map[h.horse_id] = h.records;
@@ -365,6 +372,9 @@ export default function RaceDetailPage({
           </div>
         </div>
       )}
+
+      {/* 馬場情報（含水率・クッション値・JRA公式） */}
+      <TrackConditionInfo data={trackCond} />
 
       {/* 確定オッズ・払戻（JRA-VAN） */}
       <ConfirmedResults confirmed={confirmed} entries={race.entries} />

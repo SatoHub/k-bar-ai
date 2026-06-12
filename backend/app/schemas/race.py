@@ -252,6 +252,25 @@ class ConfirmedDataResponse(BaseModel):
     payouts: ConfirmedPayouts | None = None  # 確定払戻（無ければnull）
 
 
+# --- Track condition (JRA 含水率・クッション値) schemas ---
+
+
+class TrackConditionDetailData(BaseModel):
+    cushion_value: float | None = None  # 芝クッション値
+    turf_moisture_goal: float | None = None  # 芝ゴール前含水率%
+    turf_moisture_4c: float | None = None  # 芝4コーナー含水率%
+    dirt_moisture_goal: float | None = None  # ダートゴール前含水率%
+    dirt_moisture_4c: float | None = None  # ダート4コーナー含水率%
+    scraped_at: datetime.datetime | None = None
+
+
+class TrackConditionResponse(BaseModel):
+    race_id: str
+    racecourse_name: str | None = None
+    track_condition: str | None = None  # 良/稍重/重/不良 (コード)
+    detail: TrackConditionDetailData | None = None  # 含水率・クッション値（無ければnull）
+
+
 # --- Aptitude schemas ---
 
 

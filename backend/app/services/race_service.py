@@ -317,6 +317,43 @@ async def get_confirmed_data(session: AsyncSession, race_id: str) -> dict | None
     }
 
 
+async def get_race_track_condition(
+    session: AsyncSession, race_id: str
+) -> dict | None:
+    """Return JRA 含水率・クッション値 for a race (馬場情報).
+
+    Joined from track_condition_details by (racecourse_name, race_date), scraped
+    from the JRA official site on race days. Returns null fields when not yet
+    published (non-race day / pre-publication / historical races).
+    """
+    race = (
+        await session.execute(select(Race).where(Race.race_id == race_id))
+    ).scalar_one_or_none()
+    if not race:
+        return None
+
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT cushion_value, turf_moisture_goal, turf_moisture_4c,
+                       dirt_moisture_goal, dirt_moisture_4c, scraped_at
+                FROM track_condition_details
+                WHERE racecourse_name = :name AND measured_date = :d
+                """
+            ),
+            {"name": race.racecourse_name, "d": race.race_date},
+        )
+    ).mappings().first()
+
+    return {
+        "race_id": race_id,
+        "racecourse_name": race.racecourse_name,
+        "track_condition": race.track_condition,
+        "detail": dict(row) if row is not None else None,
+    }
+
+
 async def get_latest_odds(session: AsyncSession, race_id_str: str) -> dict | None:
     """Get the latest odds snapshot for a race."""
     result = await session.execute(select(Race).where(Race.race_id == race_id_str))
