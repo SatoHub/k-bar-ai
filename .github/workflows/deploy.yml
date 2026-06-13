@@ -14,9 +14,9 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: deploy
           key: ${{ secrets.VPS_SSH_KEY }}
-          # いずれかのコマンドが失敗したらステップを失敗させる（旧来のサイレント失敗対策）
-          script_stop: true
           envs: EXPECTED_SHA
+          # 失敗検知はスクリプト内の `set -euo pipefail` が担う
+          # （appleboy/ssh-action@v1 に script_stop 入力は無いため使わない）
           script: |
             set -euo pipefail
             cd /opt/kbar
