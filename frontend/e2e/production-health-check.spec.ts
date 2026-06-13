@@ -402,19 +402,22 @@ test.describe("C. 馬券シミュレーション検証", () => {
   }) => {
     await gotoSimulatePage(page, request);
 
-    // 馬連→ボックス
-    await page.locator("button", { hasText: "馬連" }).first().click();
-    await page.waitForTimeout(500);
-    await page.locator("button", { hasText: "ボックス" }).first().click();
+    // 馬連→ボックス（馬券シミュレーター内で操作する）
+    // 「馬連」ボタンはページ上に2つ存在する（上部「組数・オッズ比較」ウィジェット /
+    // 下部の馬券シミュレーター）。シミュレーターはDOM上で後方にあるため .last() を使う。
+    await page.locator("button", { hasText: "馬連" }).last().click();
     await page.waitForTimeout(500);
 
-    // 3頭選択
-    const gridSection = page
-      .locator("text=対象馬を選択")
-      .first()
-      .locator("..")
-      .locator("..");
-    const horseButtons = gridSection.locator(".flex.flex-wrap button");
+    // 馬連を選ぶと買い方ピル（通常/ボックス/フォーメーション/流し）が表示される。
+    // 「ボックス」はシミュレーターのみ <button>（比較ウィジェットはテーブルセル）。
+    await page.getByRole("button", { name: "ボックス", exact: true }).click();
+    await page.waitForTimeout(500);
+
+    // ボックスモードのチェックボックスグリッド「対象馬を選択（N頭以上）」から3頭クリック
+    const gridLabel = page.locator("text=/対象.*を選択/").first();
+    await expect(gridLabel).toBeVisible({ timeout: 5000 });
+    const gridSection = gridLabel.locator("xpath=following-sibling::div[1]");
+    const horseButtons = gridSection.locator("button");
     const count = await horseButtons.count();
     const clickCount = Math.min(3, count);
     for (let i = 0; i < clickCount; i++) {
@@ -516,7 +519,8 @@ test.describe("D. スクリーンショットエビデンス", () => {
 
     // 1. レース一覧
     await page.goto(`/races?date=${TODAY}`);
-    await page.waitForLoadState("networkidle");
+    // オッズ自動更新ポーリングでnetworkidleが成立しにくいためdomcontentloadedで待つ
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
     await page.screenshot({
       path: "e2e/screenshots/health-01-races.png",
@@ -526,7 +530,7 @@ test.describe("D. スクリーンショットエビデンス", () => {
 
     // 2. レース詳細
     await page.goto(`/races/${race.race_id}`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
     await page.screenshot({
       path: "e2e/screenshots/health-02-detail.png",
@@ -538,7 +542,7 @@ test.describe("D. スクリーンショットエビデンス", () => {
 
     // 3. シミュレーション
     await page.goto(`/races/${race.race_id}/simulate`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
     await page.screenshot({
       path: "e2e/screenshots/health-03-simulate.png",
