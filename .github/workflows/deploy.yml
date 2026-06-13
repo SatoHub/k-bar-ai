@@ -14,12 +14,27 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: deploy
           key: ${{ secrets.VPS_SSH_KEY }}
+          # いずれかのコマンドが失敗したらステップを失敗させる（旧来のサイレント失敗対策）
+          script_stop: true
+          envs: EXPECTED_SHA
           script: |
+            set -euo pipefail
             cd /opt/kbar
             sudo chown -R deploy:deploy /opt/kbar/.git
-            git pull origin master
+            echo "=== Pulling latest (expected: ${EXPECTED_SHA:-unknown}) ==="
+            # --ff-only: 履歴が分岐していたら黙ってマージせず失敗させる
+            git pull --ff-only origin master
+            DEPLOYED=$(git rev-parse HEAD)
             echo "=== Latest commit ==="
             git log --oneline -1
+            # pull後のHEADが今回pushされたコミットと一致するか検証。
+            # 不一致＝pullが効いていない（PAT失効等で固着）→デプロイ中断
+            if [ -n "${EXPECTED_SHA:-}" ] && [ "$DEPLOYED" != "${EXPECTED_SHA}" ]; then
+              echo "ERROR: deployed HEAD ($DEPLOYED) != pushed commit (${EXPECTED_SHA}). Aborting deploy." >&2
+              exit 1
+            fi
             docker compose --env-file .env -f docker/docker-compose.prod.yml build --no-cache
             docker compose --env-file .env -f docker/docker-compose.prod.yml up -d
             echo "Deploy complete: $(date)"
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
