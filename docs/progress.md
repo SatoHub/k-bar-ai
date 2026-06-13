@@ -1,6 +1,6 @@
 # 競馬AI予想アプリ 進捗管理
 
-**最終更新:** 2026-06-13（血統・確定オッズ/払戻・馬場状態を本番表示。#1/#2/#4完了・#3保留）
+**最終更新:** 2026-06-13（#5前半=deploy.yml堅牢化を本番実証。E2Eヘルスチェック全13件グリーン化。PAT Revokeはユーザー手作業待ち）
 
 ---
 
@@ -52,7 +52,17 @@
 2. ✅ **確定オッズ・払戻を本番表示**（完了・242レース）
 3. ⏸ **モデル再学習は保留**（JV-Data 0.02%で無益。過去一括取得が前提）
 4. ✅ **馬場状態（含水率・クッション値）を本番表示**（2026-06-13完了）
-5. 🟢 運用: 旧PAT `ghp_a2SL...` のRevoke / deploy.ymlのpull失敗検知(`set -e`等・未対応)
+5. 🟢 運用（2026-06-13 一部完了）:
+   - ✅ **deploy.yml堅牢化を完了・本番実証**（コミット`a37439d`）。旧来は`script_stop`未指定
+     かつ`set -e`無しでgit pullのサイレント失敗を成功扱い→本番固着していた。対策＝
+     `set -euo pipefail`＋`git pull --ff-only`＋**pull後HEADがgithub.shaと一致するか検証**
+     （不一致なら`exit 1`）。`envs`で`EXPECTED_SHA`をリモート伝搬。
+     ⚠️`script_stop`は`appleboy/ssh-action@v1`に存在しない入力（警告が出るため削除済み）。
+     失敗検知はスクリプト内`set -e`が担う。デプロイ2回とも成功・SHA検証通過を確認
+   - ⏳ **旧PAT `ghp_a2SL...` のRevokeはユーザー手作業待ち**（classic PATはAPI/CLI削除不可）。
+     + 2026-06-13のpush時、workflowファイル変更に`workflow`スコープが必要で一時PATを使用
+       （`ghp_9kXk...`＝チャット露出のため**要Revoke**）。gh auth refreshはkeyring更新が
+       効かず`workflow`付与に失敗→PATをhttp.extraHeader単発で渡しpush（ディスク非保存）
 6. 🟡 (任意) 血統カバレッジ向上のUM全馬セットアップ / モデル再学習用の過去JV-Data一括取得
 
 ### 再開コマンド（環境起動・JRA-VAN取得）
