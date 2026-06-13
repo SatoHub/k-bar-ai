@@ -662,10 +662,21 @@ export type HitRateEntry = {
   rate: number;
 };
 
+export type AiRoiEntry = {
+  strategy: string;
+  races: number;
+  hits: number;
+  hit_rate: number;
+  invested: number;
+  returned: number;
+  roi: number;
+};
+
 export type ResultsSummary = {
   total_races: number;
   period: string;
   hit_rates: Record<string, HitRateEntry>;
+  ai_roi: AiRoiEntry;
 };
 
 export type ResultsCalendarDay = {

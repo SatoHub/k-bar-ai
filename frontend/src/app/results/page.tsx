@@ -371,6 +371,56 @@ export default function ResultsPage() {
               </div>
             </div>
           )}
+
+          {/* AI回収率（自動ペーパートレード） */}
+          {summary && summary.ai_roi && summary.ai_roi.races > 0 && (
+            <div className="glass-card p-4">
+              <div
+                className="mb-2 text-xs font-semibold"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {calYear}年{calMonth}月 AI回収率
+              </div>
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <div
+                    className="text-[10px] truncate"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {summary.ai_roi.strategy}
+                  </div>
+                  <div
+                    className="text-2xl font-bold tabular-nums"
+                    style={{
+                      color:
+                        summary.ai_roi.roi >= 100
+                          ? "var(--green)"
+                          : "var(--text-primary)",
+                    }}
+                  >
+                    {summary.ai_roi.roi}%
+                  </div>
+                </div>
+                <div
+                  className="text-right text-[11px] tabular-nums shrink-0"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <div>
+                    的中 {summary.ai_roi.hits}/{summary.ai_roi.races}（
+                    {summary.ai_roi.hit_rate}%）
+                  </div>
+                  <div>投資 ¥{summary.ai_roi.invested.toLocaleString()}</div>
+                  <div>払戻 ¥{summary.ai_roi.returned.toLocaleString()}</div>
+                </div>
+              </div>
+              <div
+                className="mt-2 text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                ※結果と確定単勝オッズから自動算出（実際の賭けは不要）。100%超で黒字
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right: Results */}

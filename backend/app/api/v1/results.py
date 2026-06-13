@@ -70,10 +70,21 @@ class HitRateEntry(BaseModel):
     rate: float
 
 
+class AiRoiEntry(BaseModel):
+    strategy: str
+    races: int
+    hits: int
+    hit_rate: float
+    invested: int
+    returned: int
+    roi: float
+
+
 class ResultsSummaryResponse(BaseModel):
     total_races: int
     period: str
     hit_rates: dict[str, HitRateEntry]
+    ai_roi: AiRoiEntry
 
 
 class LatestDateResponse(BaseModel):

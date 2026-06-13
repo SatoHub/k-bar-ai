@@ -339,6 +339,15 @@ async def get_results_summary(
             "total_races": 0,
             "period": period,
             "hit_rates": _empty_hit_rates(),
+            "ai_roi": {
+                "strategy": "単勝◎（AI1位に毎レース¥100）",
+                "races": 0,
+                "hits": 0,
+                "hit_rate": 0.0,
+                "invested": 0,
+                "returned": 0,
+                "roi": 0.0,
+            },
         }
 
     race_ids = [r.id for r in races]
@@ -367,9 +376,12 @@ async def get_results_summary(
     )
     entries_result = await session.execute(entries_q)
     finish_by_race: dict[str, dict[str, int]] = {}
+    odds_by_race: dict[str, dict[str, float]] = {}
     for entry in entries_result.scalars().all():
         rid = str(entry.race_id)
         finish_by_race.setdefault(rid, {})[str(entry.horse_id)] = entry.finish_position
+        if entry.win_odds is not None:
+            odds_by_race.setdefault(rid, {})[str(entry.horse_id)] = float(entry.win_odds)
 
     # Aggregate hits
     bet_types = [
@@ -378,6 +390,13 @@ async def get_results_summary(
     ]
     counters = {bt: 0 for bt in bet_types}
     total_races = 0
+
+    # AI回収率（単勝◎＝AI1位に毎レース¥100賭けた想定。結果＋確定単勝オッズから自動算出）
+    BET_UNIT = 100.0
+    roi_races = 0
+    roi_hits = 0
+    roi_invested = 0.0
+    roi_returned = 0.0
 
     for race in races:
         rid = str(race.id)
@@ -390,6 +409,16 @@ async def get_results_summary(
         for bt in bet_types:
             if hits[bt]:
                 counters[bt] += 1
+
+        # 単勝◎: AI1位馬にオッズがあり着順が確定していれば1レースとして集計
+        top_horse = preds[0]["horse_id"]
+        top_odds = odds_by_race.get(rid, {}).get(top_horse)
+        if top_odds is not None and top_horse in finishes:
+            roi_races += 1
+            roi_invested += BET_UNIT
+            if finishes[top_horse] == 1:
+                roi_hits += 1
+                roi_returned += top_odds * BET_UNIT
 
     # Build hit_rates
     key_map = {
@@ -411,10 +440,21 @@ async def get_results_summary(
 
     period = f"{year}-{month:02d}" if year and month else "全期間"
 
+    ai_roi = {
+        "strategy": "単勝◎（AI1位に毎レース¥100）",
+        "races": roi_races,
+        "hits": roi_hits,
+        "hit_rate": round(roi_hits / roi_races * 100, 1) if roi_races > 0 else 0.0,
+        "invested": int(roi_invested),
+        "returned": int(roi_returned),
+        "roi": round(roi_returned / roi_invested * 100, 1) if roi_invested > 0 else 0.0,
+    }
+
     return {
         "total_races": total_races,
         "period": period,
         "hit_rates": hit_rates,
+        "ai_roi": ai_roi,
     }
 
 
