@@ -264,15 +264,24 @@ export default function SimulatePage({
         </div>
       </div>
 
-      {/* 組数・オッズ比較（全買い方・全券種） */}
-      {race.entries.length > 0 && (
-        <BetMethodComparison raceIdStr={race.race_id} entries={race.entries} />
-      )}
+      {/* 2カラム: 左=組数・オッズ比較(スクロール追従) / 右=AI推奨＋オッズ＋シミュレーター */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+        {/* Left: 組数・オッズ比較（全買い方・全券種）— sticky で見比べやすく固定 */}
+        {race.entries.length > 0 && (
+          <div className="lg:sticky lg:top-16 lg:col-span-5">
+            <BetMethodComparison
+              raceIdStr={race.race_id}
+              entries={race.entries}
+            />
+          </div>
+        )}
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Left: AI Recommendations + Odds info */}
-        <div className="space-y-4">
+        {/* Right: AI推奨買い目 ＋ オッズ ＋ 馬券シミュレーター */}
+        <div
+          className={`space-y-4 ${
+            race.entries.length > 0 ? "lg:col-span-7" : "lg:col-span-12"
+          }`}
+        >
           {/* AI Recommendations */}
           {predictions && (
             <AiRecommendations
@@ -533,10 +542,8 @@ export default function SimulatePage({
                 </p>
               </div>
             )}
-        </div>
 
-        {/* Right: Simulator */}
-        <div>
+          {/* 馬券シミュレーター */}
           <BettingSimulator
             raceId={race.id}
             raceIdStr={race.race_id}
