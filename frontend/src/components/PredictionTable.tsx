@@ -182,11 +182,11 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
               }}
             >
               <th className="px-4 py-2 w-16">順位</th>
-              <th className="px-4 py-2 w-64">馬名</th>
-              <th className="px-4 py-2">予測スコア</th>
-              <th className="px-4 py-2 w-24">信頼度</th>
-              <th className="px-4 py-2 w-24">実着順</th>
-              <th className="px-4 py-2 w-28">分析</th>
+              <th className="px-4 py-2 w-56">馬名</th>
+              <th className="px-4 py-2 w-52">予測スコア</th>
+              <th className="px-4 py-2 w-20">信頼度</th>
+              <th className="px-4 py-2 w-20">実着順</th>
+              <th className="px-4 py-2">予想根拠</th>
             </tr>
           </thead>
           <tbody>
@@ -199,12 +199,12 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
               const score = Number(p.predicted_score ?? 0);
               const hasShap = p.shap_data && Object.keys(p.shap_data).length > 0;
               const hasExplanation = !!p.explanation;
-              const canExpand = hasShap || hasExplanation;
               const isExpanded = expandedId === p.id;
 
               return (
                 <React.Fragment key={p.id}>
                   <tr
+                    className="[&>td]:align-top"
                     style={{
                       borderBottom: isExpanded ? "none" : "1px solid var(--border)",
                       backgroundColor: hit
@@ -279,18 +279,37 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
                       {p.actual_finish ?? "---"}
                     </td>
                     <td className="px-4 py-2">
-                      {canExpand && (
+                      {hasExplanation && (
+                        <p
+                          className="text-xs leading-relaxed"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
+                          {p.explanation?.replace(
+                            /^この馬の予想根拠[:：]\s*/,
+                            "",
+                          )}
+                        </p>
+                      )}
+                      {hasShap && (
                         <button
                           type="button"
                           onClick={() => toggleExpand(p.id)}
-                          className="cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          className="mt-1.5 cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium"
                           style={{
                             backgroundColor: "var(--accent-muted)",
                             color: "var(--accent)",
                           }}
                         >
-                          {isExpanded ? "閉じる" : hasShap ? "SHAP分析" : "説明を見る"}
+                          {isExpanded ? "閉じる" : "SHAP分析"}
                         </button>
+                      )}
+                      {!hasExplanation && !hasShap && (
+                        <span
+                          className="text-xs"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          —
+                        </span>
                       )}
                     </td>
                   </tr>
