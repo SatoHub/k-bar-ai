@@ -162,6 +162,32 @@ def build_results_flex(results: list[dict]) -> dict:
             h.get("name", "?") for h in res.get("top3", [])[:3]
         )
 
+        # ヘッダ行（レース名＋勝敗アイコン）。
+        # ⚠️ LINE Flex は text に空文字を許さない（400 Bad Request になる）。
+        # 賭けの無いレース(status_icon="")はアイコンのtextコンポーネント自体を省く。
+        header_row: list[dict] = [
+            {
+                "type": "text",
+                "text": race_label or "-",
+                "size": "sm",
+                "weight": "bold",
+                "flex": 5,
+                "color": "#333333",
+            },
+        ]
+        if status_icon:
+            header_row.append(
+                {
+                    "type": "text",
+                    "text": status_icon,
+                    "size": "sm",
+                    "weight": "bold",
+                    "flex": 2,
+                    "align": "end",
+                    "color": color,
+                }
+            )
+
         body_contents.append(
             {
                 "type": "box",
@@ -171,25 +197,7 @@ def build_results_flex(results: list[dict]) -> dict:
                     {
                         "type": "box",
                         "layout": "horizontal",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": race_label,
-                                "size": "sm",
-                                "weight": "bold",
-                                "flex": 5,
-                                "color": "#333333",
-                            },
-                            {
-                                "type": "text",
-                                "text": status_icon,
-                                "size": "sm",
-                                "weight": "bold",
-                                "flex": 2,
-                                "align": "end",
-                                "color": color,
-                            },
-                        ],
+                        "contents": header_row,
                     },
                     {
                         "type": "text",
