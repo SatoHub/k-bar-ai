@@ -45,6 +45,10 @@ export default function SimulatePage({
   const [prefillBetType, setPrefillBetType] = useState<string | null>(null);
   const [prefillHorseIds, setPrefillHorseIds] = useState<string[] | null>(null);
 
+  // 中央カラムの高さを抑えるため、単勝オッズ表とオッズ変動グラフは折りたたみ（既定で閉じる）
+  const [showOddsTable, setShowOddsTable] = useState(false);
+  const [showOddsChart, setShowOddsChart] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -300,7 +304,30 @@ export default function SimulatePage({
                 className="flex items-center justify-between px-5 py-3"
                 style={{ borderBottom: "1px solid var(--border)" }}
               >
-                <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOddsTable((v) => !v)}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <svg
+                    className="h-3.5 w-3.5 transition-transform duration-200"
+                    style={{
+                      color: "var(--text-muted)",
+                      transform: showOddsTable
+                        ? "rotate(90deg)"
+                        : "rotate(0deg)",
+                    }}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
                   <svg
                     className="h-4 w-4"
                     fill="none"
@@ -321,7 +348,7 @@ export default function SimulatePage({
                   >
                     単勝オッズ
                   </h2>
-                </div>
+                </button>
                 <div className="flex items-center gap-2 sm:gap-3">
                   {odds.fetched_at && (
                     <span
@@ -363,8 +390,9 @@ export default function SimulatePage({
                   </button>
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm whitespace-nowrap">
+              {showOddsTable && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm whitespace-nowrap">
                   <thead>
                     <tr
                       className="text-left text-[10px] font-semibold uppercase tracking-wider"
@@ -460,7 +488,8 @@ export default function SimulatePage({
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -473,7 +502,32 @@ export default function SimulatePage({
                 border: "1px solid var(--border)",
               }}
             >
-              <div className="mb-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowOddsChart((v) => !v)}
+                className={`flex w-full items-center gap-2 cursor-pointer ${
+                  showOddsChart ? "mb-3" : ""
+                }`}
+              >
+                <svg
+                  className="h-3.5 w-3.5 transition-transform duration-200"
+                  style={{
+                    color: "var(--text-muted)",
+                    transform: showOddsChart
+                      ? "rotate(90deg)"
+                      : "rotate(0deg)",
+                  }}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
                 <svg
                   className="h-4 w-4"
                   fill="none"
@@ -494,8 +548,8 @@ export default function SimulatePage({
                 >
                   オッズ変動
                 </h2>
-              </div>
-              <OddsChart history={oddsHistory.history} />
+              </button>
+              {showOddsChart && <OddsChart history={oddsHistory.history} />}
             </div>
           )}
 

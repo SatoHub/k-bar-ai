@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { PredictionEntry, RaceEntry } from "@/lib/api";
 
 const BET_TYPES = [
@@ -69,6 +69,9 @@ export default function AiRecommendations({
       })
       .sort((a, b) => (b.predicted_score ?? 0) - (a.predicted_score ?? 0));
   }, [predictions, entries]);
+
+  // 券種タブ（縦積みを防ぎ、選択した1券種だけ表示）
+  const [activeBet, setActiveBet] = useState<string>("tansho");
 
   if (enriched.length === 0) {
     return (
@@ -379,13 +382,38 @@ export default function AiRecommendations({
         </div>
       </div>
 
-      {/* Recommendations per bet type */}
-      <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-        {BET_TYPES.map((bt, i) => (
-          <div key={bt.value} style={{ borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
-            {renderBetRecommendation(bt)}
-          </div>
-        ))}
+      {/* 券種タブ */}
+      <div className="px-3 pt-3">
+        <div className="flex flex-wrap gap-1">
+          {BET_TYPES.map((bt) => (
+            <button
+              key={bt.value}
+              type="button"
+              onClick={() => setActiveBet(bt.value)}
+              className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-all duration-200"
+              style={{
+                backgroundColor:
+                  activeBet === bt.value
+                    ? "var(--accent)"
+                    : "rgba(255,255,255,0.05)",
+                color: activeBet === bt.value ? "#fff" : "var(--text-muted)",
+                border:
+                  activeBet === bt.value
+                    ? "1px solid var(--accent)"
+                    : "1px solid transparent",
+              }}
+            >
+              {bt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 選択中の券種の推奨買い目（1件のみ表示） */}
+      <div className="p-2">
+        {renderBetRecommendation(
+          BET_TYPES.find((b) => b.value === activeBet) ?? BET_TYPES[0],
+        )}
       </div>
     </div>
   );
