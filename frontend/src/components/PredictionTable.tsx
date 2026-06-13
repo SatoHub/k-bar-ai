@@ -181,12 +181,12 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
                 color: "var(--text-secondary)",
               }}
             >
-              <th className="px-4 py-2 w-12">順位</th>
-              <th className="px-4 py-2">馬名</th>
-              <th className="px-4 py-2 w-48">予測スコア</th>
-              <th className="px-4 py-2 w-20">信頼度</th>
-              <th className="px-4 py-2 w-20">実着順</th>
-              <th className="px-4 py-2 w-24">分析</th>
+              <th className="px-4 py-2 w-16">順位</th>
+              <th className="px-4 py-2 w-64">馬名</th>
+              <th className="px-4 py-2">予測スコア</th>
+              <th className="px-4 py-2 w-24">信頼度</th>
+              <th className="px-4 py-2 w-24">実着順</th>
+              <th className="px-4 py-2 w-28">分析</th>
             </tr>
           </thead>
           <tbody>
