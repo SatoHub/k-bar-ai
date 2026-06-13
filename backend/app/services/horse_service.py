@@ -68,11 +68,14 @@ async def get_horse_detail(session: AsyncSession, horse_id: uuid.UUID) -> dict |
             }
         )
 
-    # Build image URL from netkeiba_id if available
+    # Build image URL from netkeiba_id if available.
+    # netkeibaの馬写真は show_photo.php 経由（静的.jpgパスは404）。
+    # default_image=netkeiba で写真の無い馬もデフォルト画像が返る。ホットリンク制限なし。
     image_url = horse.image_url
     if not image_url and horse.netkeiba_id:
         image_url = (
-            f"https://cdn.netkeiba.com/img/horse/240_320/{horse.netkeiba_id}.jpg"
+            "https://cdn.netkeiba.com/img.db.sp/show_photo.php"
+            f"?horse_id={horse.netkeiba_id}&no=spdb&tn=&tmp=no&default_image=netkeiba"
         )
 
     return {

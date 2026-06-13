@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchHorseDetail, type HorseDetail } from "@/lib/api";
 
-const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 320" fill="none"><rect width="240" height="320" rx="12" fill="%231a1a2e"/><path d="M120 100c-20 0-36 16-36 36s16 36 36 36 36-16 36-36-16-36-36-36zm-8 48l-16-8v-8l24 12 24-12v8l-16 8-8 4-8-4z" fill="%23334155"/><text x="120" y="250" text-anchor="middle" fill="%23475569" font-size="14" font-family="sans-serif">No Image</text></svg>')}`;
+const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 320" fill="none"><rect width="240" height="320" rx="12" fill="#1a1a2e"/><path d="M120 100c-20 0-36 16-36 36s16 36 36 36 36-16 36-36-16-36-36-36zm-8 48l-16-8v-8l24 12 24-12v8l-16 8-8 4-8-4z" fill="#334155"/><text x="120" y="250" text-anchor="middle" fill="#475569" font-size="14" font-family="sans-serif">No Image</text></svg>')}`;
 
 export default function HorseDetailPage({
   params,
