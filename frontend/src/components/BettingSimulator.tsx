@@ -211,7 +211,7 @@ function buildComboKey(
     nums.push(n);
   }
   const arranged = ordered ? nums : [...nums].sort((a, b) => a - b);
-  return arranged.map((n) => String(n).padStart(2, "0")).join("-");
+  return arranged.map((n) => String(n).padStart(2, "0")).join("");
 }
 
 /** 複数買いの全買い目（馬ID配列）を展開。通常は空配列。 */

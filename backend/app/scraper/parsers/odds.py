@@ -76,7 +76,9 @@ def parse_combo_odds(data: dict, bet_type: str, selections: list[int]) -> float 
     else:
         # Unordered: sort ascending
         parts = [f"{s:02d}" for s in sorted(selections)]
-    combo_key = "-".join(parts)
+    # netkeibaのオッズキーは区切りなしのゼロ埋め連結（例: "141516"）。
+    # "-"区切りで引くと必ずmissしてnullになる（parse_full_oddsと同形式）。
+    combo_key = "".join(parts)
 
     values = section.get(combo_key)
     if not isinstance(values, list) or not values:

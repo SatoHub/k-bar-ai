@@ -52,7 +52,7 @@ function getTypeDef(betType: string): BetTypeDef {
   return BET_TYPES.find((t) => t.value === betType) ?? BET_TYPES[0];
 }
 
-/** combo（馬ID配列）→ netkeibaオッズキー "01-02-03" に変換 */
+/** combo（馬ID配列）→ netkeibaオッズキー "010203" に変換（区切りなし・netkeiba準拠） */
 function buildComboKey(
   comboIds: string[],
   ordered: boolean,
@@ -66,7 +66,7 @@ function buildComboKey(
     nums.push(n);
   }
   const arranged = ordered ? nums : [...nums].sort((a, b) => a - b);
-  return arranged.map((n) => String(n).padStart(2, "0")).join("-");
+  return arranged.map((n) => String(n).padStart(2, "0")).join("");
 }
 
 type Props = {
