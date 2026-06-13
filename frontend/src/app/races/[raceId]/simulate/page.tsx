@@ -264,11 +264,11 @@ export default function SimulatePage({
         </div>
       </div>
 
-      {/* 2カラム: 左=組数・オッズ比較(スクロール追従) / 右=AI推奨＋オッズ＋シミュレーター */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
-        {/* Left: 組数・オッズ比較（全買い方・全券種）— sticky で見比べやすく固定 */}
+      {/* 3カラム: 組数・オッズ比較 / AI推奨買い目 / 馬券シミュレーター を横並び */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
+        {/* Col 1: 組数・オッズ比較（全買い方・全券種）— sticky で見比べやすく固定 */}
         {race.entries.length > 0 && (
-          <div className="lg:sticky lg:top-16 lg:col-span-5">
+          <div className="lg:sticky lg:top-16">
             <BetMethodComparison
               raceIdStr={race.race_id}
               entries={race.entries}
@@ -276,12 +276,8 @@ export default function SimulatePage({
           </div>
         )}
 
-        {/* Right: AI推奨買い目 ＋ オッズ ＋ 馬券シミュレーター */}
-        <div
-          className={`space-y-4 ${
-            race.entries.length > 0 ? "lg:col-span-7" : "lg:col-span-12"
-          }`}
-        >
+        {/* Col 2: AI推奨買い目 ＋ オッズ ＋ オッズ変動 */}
+        <div className="space-y-4">
           {/* AI Recommendations */}
           {predictions && (
             <AiRecommendations
@@ -542,8 +538,10 @@ export default function SimulatePage({
                 </p>
               </div>
             )}
+        </div>
 
-          {/* 馬券シミュレーター */}
+        {/* Col 3: 馬券シミュレーター */}
+        <div>
           <BettingSimulator
             raceId={race.id}
             raceIdStr={race.race_id}
