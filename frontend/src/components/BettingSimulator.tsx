@@ -14,7 +14,7 @@ import {
   getPointCount,
   expandCombinations,
 } from "@/lib/betCalculations";
-import ComboBadges from "@/components/ComboBadges";
+import ComboBadges, { wakuColor } from "@/components/ComboBadges";
 
 const BET_TYPES = [
   { value: "tansho", label: "単勝", picks: 1, ordered: false, desc: "1着を当てる", isWaku: false },
@@ -96,6 +96,7 @@ type Props = {
   prefillBetType?: string | null;
   prefillHorseIds?: string[] | null;
   onPrefillConsumed?: () => void;
+  onBetDeleted?: (id: string) => void;
 };
 
 const PICK_LABELS_ORDERED: Record<number, string[]> = {
@@ -428,6 +429,14 @@ function ComboBreakdown({
   const totalStake = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const hasCustom = Object.keys(slot.comboAmounts).length > 0;
 
+  // ガミ防止ライン: 既定掛け金で「当たっても損」にならない最低オッズ。
+  // 全買い目均等なら ≒ 点数。これ未満の的中はすべて収支マイナス。
+  const reqOdds = slot.amount > 0 ? totalStake / slot.amount : 0;
+  const pricedRows = rows.filter((r) => r.odds != null).length;
+  const gamiRows = rows.filter(
+    (r) => r.payout != null && r.payout < totalStake,
+  ).length;
+
   if (count === 0) return null;
 
   return (
@@ -458,6 +467,40 @@ function ComboBreakdown({
           </button>
         )}
       </div>
+      {/* ガミ防止ライン */}
+      {pricedRows > 0 && (
+        <div
+          className="mb-1.5 rounded-lg px-3 py-2 text-[11px] leading-relaxed"
+          style={{
+            backgroundColor:
+              gamiRows > 0 ? "rgba(239,68,68,0.08)" : "rgba(34,197,94,0.07)",
+            border:
+              gamiRows > 0
+                ? "1px solid rgba(239,68,68,0.2)"
+                : "1px solid rgba(34,197,94,0.2)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <span style={{ color: "var(--text-muted)" }}>ガミ防止ライン</span>{" "}
+          <strong
+            className="tabular-nums"
+            style={{ color: gamiRows > 0 ? "var(--red)" : "var(--green)" }}
+          >
+            オッズ {reqOdds.toFixed(1)}倍以上
+          </strong>{" "}
+          <span style={{ color: "var(--text-muted)" }}>
+            （総投資 ¥{totalStake.toLocaleString()}・これ未満の的中は収支マイナス）
+          </span>
+          {gamiRows > 0 ? (
+            <span style={{ color: "var(--red)" }}>
+              {" "}
+              — ⚠️ {gamiRows}点が該当（当たっても損）。外すか掛け金を見直しを
+            </span>
+          ) : (
+            <span style={{ color: "var(--green)" }}> — ✓ 全{pricedRows}点クリア</span>
+          )}
+        </div>
+      )}
       <div
         className="max-h-60 overflow-y-auto rounded-lg"
         style={{ border: "1px solid var(--border)" }}
@@ -482,12 +525,18 @@ function ComboBreakdown({
                   : r.odds != null
                     ? `${r.odds.toFixed(1)}`
                     : "—";
+              // 当たっても総投資を下回る＝ガミ目
+              const isGami = r.payout != null && r.payout < totalStake;
               return (
                 <tr
                   key={r.key ?? i}
                   style={{
                     borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                    backgroundColor: i % 2 === 1 ? "rgba(255,255,255,0.02)" : "transparent",
+                    backgroundColor: isGami
+                      ? "rgba(239,68,68,0.06)"
+                      : i % 2 === 1
+                        ? "rgba(255,255,255,0.02)"
+                        : "transparent",
                   }}
                 >
                   <td className="px-2 py-1.5">
@@ -529,9 +578,21 @@ function ComboBreakdown({
                   </td>
                   <td
                     className="px-2 py-1.5 text-right tabular-nums"
-                    style={{ color: "var(--text-muted)" }}
+                    style={{ color: isGami ? "var(--red)" : "var(--text-muted)" }}
                   >
                     {r.payout != null ? `¥${r.payout.toLocaleString()}` : "—"}
+                    {isGami && (
+                      <span
+                        className="ml-1 rounded px-1 py-0.5 text-[9px] font-semibold"
+                        style={{
+                          backgroundColor: "rgba(239,68,68,0.15)",
+                          color: "var(--red)",
+                        }}
+                        title="当たっても総投資を下回る（ガミ）"
+                      >
+                        ガミ
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
@@ -1381,6 +1442,69 @@ function BetSlotCard({
   );
 }
 
+/* ─── 記録済み馬券の買い目を枠色付き馬番バッジで表示 ─── */
+
+function RecordedBetBadges({
+  horseNames,
+  betLabel,
+  entries,
+}: {
+  horseNames: string;
+  betLabel: string;
+  entries: RaceEntry[];
+}) {
+  const typeDef = BET_TYPES.find((t) => t.label === betLabel);
+  const ordered = typeDef?.ordered ?? false;
+  const tokens = horseNames
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-0.5 gap-y-1">
+      {tokens.map((tok, i) => {
+        const wakuMatch = tok.match(/^(\d+)枠$/);
+        let num: number | null = null;
+        let bracket: number | null = null;
+        if (wakuMatch) {
+          num = Number(wakuMatch[1]);
+          bracket = num;
+        } else {
+          const e = entries.find((en) => en.horse.name === tok);
+          num = e?.post_position ?? null;
+          bracket = e?.bracket_number ?? null;
+        }
+        const c = wakuColor(bracket);
+        const display =
+          num == null ? tok : wakuMatch ? `${num}枠` : String(num);
+        return (
+          <span key={i} className="inline-flex items-center">
+            {i > 0 && (
+              <span
+                className="mx-0.5 text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {ordered ? "→" : ""}
+              </span>
+            )}
+            <span
+              title={`${num ?? "?"} ${tok}`}
+              className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded px-1 text-xs font-bold tabular-nums"
+              style={{
+                backgroundColor: num == null ? "rgba(255,255,255,0.08)" : c.bg,
+                color: num == null ? "var(--text-secondary)" : c.fg,
+                border: "1px solid rgba(0,0,0,0.25)",
+              }}
+            >
+              {display}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /* ─── Main BettingSimulator (multi-slot) ─── */
 
 export default function BettingSimulator({
@@ -1393,6 +1517,7 @@ export default function BettingSimulator({
   prefillBetType,
   prefillHorseIds,
   onPrefillConsumed,
+  onBetDeleted,
 }: Props) {
   const [slots, setSlots] = useState<BetSlotState[]>([createSlot()]);
   const [saving, setSaving] = useState(false);
@@ -1865,6 +1990,39 @@ export default function BettingSimulator({
             </div>
           </div>
 
+          {/* ガミ警告: 最も高い的中でも投資割れする構成 */}
+          {slotStats.totalPayout > 0 &&
+            slotStats.totalPayout < slotStats.totalAmount && (
+              <div
+                className="mb-4 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs leading-relaxed"
+                style={{
+                  backgroundColor: "rgba(239,68,68,0.1)",
+                  color: "var(--red)",
+                  border: "1px solid rgba(239,68,68,0.25)",
+                }}
+              >
+                <svg
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
+                </svg>
+                <span>
+                  <strong>ガミ警告</strong> — 最も高い的中でも払戻 ¥
+                  {slotStats.totalPayout.toLocaleString()} が投資 ¥
+                  {slotStats.totalAmount.toLocaleString()}
+                  を下回ります。当たっても収支マイナスです。点数を絞るか、低オッズの買い目を外して1点を厚くしましょう。
+                </span>
+              </div>
+            )}
+
           {/* Save all button */}
           <button
             type="button"
@@ -1984,9 +2142,11 @@ export default function BettingSimulator({
                   >
                     {b.betType}
                   </span>
-                  <span className="text-sm" style={{ color: "var(--text-primary)" }}>
-                    {b.horseNames}
-                  </span>
+                  <RecordedBetBadges
+                    horseNames={b.horseNames}
+                    betLabel={b.betType}
+                    entries={entries}
+                  />
                 </div>
                 <div className="flex items-center gap-4 text-right">
                   <span className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>
@@ -2001,6 +2161,25 @@ export default function BettingSimulator({
                   >
                     {b.payout !== null ? `¥${b.payout.toLocaleString()}` : "---"}
                   </span>
+                  {onBetDeleted && (
+                    <button
+                      type="button"
+                      onClick={() => onBetDeleted(b.id)}
+                      className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-sm transition-colors duration-150"
+                      style={{ color: "var(--text-muted)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = "var(--red)";
+                        e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = "var(--text-muted)";
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                      title="この記録を削除"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

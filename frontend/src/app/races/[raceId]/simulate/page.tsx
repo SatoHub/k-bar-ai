@@ -8,6 +8,7 @@ import {
   fetchOddsHistory,
   fetchPredictions,
   refreshOdds,
+  deleteBet,
   type RaceDetail,
   type OddsResponse,
   type OddsHistoryResponse,
@@ -99,6 +100,15 @@ export default function SimulatePage({
 
   function handleBetSaved(bet: SessionBet) {
     setSessionBets((prev) => [...prev, bet]);
+  }
+
+  async function handleBetDeleted(id: string) {
+    try {
+      await deleteBet(id);
+    } catch {
+      // 削除APIが失敗してもセッション表示からは除去する
+    }
+    setSessionBets((prev) => prev.filter((b) => b.id !== id));
   }
 
   const handleSelectBet = useCallback(
@@ -603,6 +613,7 @@ export default function SimulatePage({
             entries={race.entries}
             sessionBets={sessionBets}
             onBetSaved={handleBetSaved}
+            onBetDeleted={handleBetDeleted}
             prefillBetType={prefillBetType}
             prefillHorseIds={prefillHorseIds}
             onPrefillConsumed={handlePrefillConsumed}

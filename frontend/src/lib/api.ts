@@ -609,6 +609,13 @@ export function updateBet(
   return putJSON<BetRecord>(`/bets/${betId}`, data);
 }
 
+export async function deleteBet(betId: string): Promise<void> {
+  const res = await fetch(`${BASE}/bets/${betId}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`API ${res.status}: ${res.statusText}`);
+  }
+}
+
 export function fetchBetSummary(): Promise<BetSummary> {
   return fetchJSON<BetSummary>("/bets/summary");
 }
