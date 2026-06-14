@@ -11,7 +11,14 @@ from app.schemas.bet import (
     BetRecordUpdate,
     BetSummaryResponse,
 )
-from app.services.bet_service import create_bet, delete_bet, get_bet_summary, get_bets, update_bet
+from app.services.bet_service import (
+    create_bet,
+    delete_bet,
+    get_bet_summary,
+    get_bets,
+    settle_bets,
+    update_bet,
+)
 
 router = APIRouter(prefix="/bets", tags=["bets"])
 
@@ -35,6 +42,13 @@ async def list_bets(
 @router.get("/summary", response_model=BetSummaryResponse)
 async def summary(session: AsyncSession = Depends(get_session)):
     return await get_bet_summary(session)
+
+
+@router.post("/settle")
+async def settle(session: AsyncSession = Depends(get_session)):
+    """結果が出ている未判定の馬券を当落判定し、収支に反映する。"""
+    count = await settle_bets(session)
+    return {"settled": count}
 
 
 @router.put("/{bet_id}", response_model=BetRecordResponse)

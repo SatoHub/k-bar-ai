@@ -620,6 +620,10 @@ export function fetchBetSummary(): Promise<BetSummary> {
   return fetchJSON<BetSummary>("/bets/summary");
 }
 
+export function settleBets(): Promise<{ settled: number }> {
+  return postJSON<{ settled: number }>("/bets/settle");
+}
+
 // ---------------------------------------------------------------------------
 // Results (AI prediction hit analysis)
 // ---------------------------------------------------------------------------
