@@ -62,8 +62,8 @@ async def suggest_hedge(
         return {**base, "odds_live": False, "total_allocated": 0, "suggestions": [],
                 "message": "予想またはオッズが不足しています"}
 
-    # 穴馬を検出（is_sleeper のみ採用）
-    sleepers_res = await find_sleepers(session, race_id_str, min_fav=min_fav)
+    # 穴馬を検出（is_sleeper のみ採用）。応答時間短縮のため頭数を抑制。
+    sleepers_res = await find_sleepers(session, race_id_str, min_fav=min_fav, max_horses=10)
     sleeper_posts = [
         e["post_position"] for e in (sleepers_res or {}).get("entries", [])
         if e.get("is_sleeper") and e.get("post_position")
