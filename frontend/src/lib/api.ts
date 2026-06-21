@@ -289,12 +289,19 @@ export type RaceResultEntry = {
   horse_name: string;
 };
 
+export type BetEntryInfo = {
+  post_position: number | null;
+  bracket_number: number | null;
+  horse_name: string;
+};
+
 export type BetRaceInfo = {
   race_number: number | null;
   racecourse_name: string | null;
   race_name: string | null;
   race_id_str: string | null;
   result_top3: RaceResultEntry[];
+  entries: BetEntryInfo[];
 };
 
 export type BetRecord = {

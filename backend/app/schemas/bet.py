@@ -69,12 +69,19 @@ class RaceResultEntry(BaseModel):
     horse_name: str
 
 
+class BetEntryInfo(BaseModel):
+    post_position: int | None = None
+    bracket_number: int | None = None
+    horse_name: str
+
+
 class BetRaceInfo(BaseModel):
     race_number: int | None = None
     racecourse_name: str | None = None
     race_name: str | None = None
     race_id_str: str | None = None
     result_top3: list[RaceResultEntry] = []
+    entries: list[BetEntryInfo] = []  # 馬名→馬番/枠の逆引き用
 
 
 class BetRecordResponse(BaseModel):

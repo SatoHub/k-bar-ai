@@ -8,7 +8,7 @@ from sqlalchemy.orm import joinedload
 from app.models.bet_record import BetRecord
 from app.models.entry import RaceEntry
 from app.models.horse import Horse
-from app.schemas.bet import BetRaceInfo, RaceResultEntry
+from app.schemas.bet import BetEntryInfo, BetRaceInfo, RaceResultEntry
 
 
 async def create_bet(session: AsyncSession, data: dict) -> BetRecord:
@@ -210,6 +210,29 @@ async def _build_race_info(
             RaceResultEntry(finish_position=row.finish_position, horse_name=row.horse_name)
         )
 
+    # All entries (post / bracket / name) so the client can map names -> 馬番/枠
+    entry_query = (
+        select(
+            RaceEntry.race_id,
+            RaceEntry.post_position,
+            RaceEntry.bracket_number,
+            Horse.name.label("horse_name"),
+        )
+        .join(Horse, RaceEntry.horse_id == Horse.id)
+        .where(RaceEntry.race_id.in_(unique_race_ids))
+        .order_by(RaceEntry.race_id, RaceEntry.post_position)
+    )
+    entry_rows = (await session.execute(entry_query)).all()
+    entries_map: dict[uuid.UUID, list[BetEntryInfo]] = {}
+    for row in entry_rows:
+        entries_map.setdefault(row.race_id, []).append(
+            BetEntryInfo(
+                post_position=row.post_position,
+                bracket_number=row.bracket_number,
+                horse_name=row.horse_name,
+            )
+        )
+
     # Build race info from the bet's eagerly loaded race relationship
     info_map: dict[uuid.UUID, BetRaceInfo] = {}
     for bet in bets:
@@ -224,6 +247,7 @@ async def _build_race_info(
             race_name=race.race_name,
             race_id_str=race.race_id,
             result_top3=top3_map.get(bet.race_id, []),
+            entries=entries_map.get(bet.race_id, []),
         )
 
     return info_map
