@@ -163,6 +163,15 @@ export type PredictionEntry = {
   shap_data?: Record<string, number> | null;
 };
 
+// 荒れ度スコア (race-level upset score)
+export type UpsetScore = {
+  score: number;
+  percentile: number;
+  level: "low" | "mid" | "high";
+  expected_upset_rate: number;
+  hint: string;
+};
+
 // Race prediction response
 export type RacePredictionResponse = {
   race_id: string;
@@ -170,6 +179,7 @@ export type RacePredictionResponse = {
   racecourse_name: string | null;
   race_name: string | null;
   model_version: string | null;
+  upset?: UpsetScore | null;
   predictions: PredictionEntry[];
 };
 

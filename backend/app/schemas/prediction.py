@@ -55,10 +55,21 @@ class PredictionEntry(BaseModel):
     shap_data: dict | None = None
 
 
+class UpsetScore(BaseModel):
+    """レース単位の荒れ度スコア (本命人気馬が崩れる確率)。"""
+
+    score: float  # 0-1, 1人気が複勝圏外になる予測確率
+    percentile: float  # 過去レース分布内の位置 (0-1)
+    level: str  # "low" / "mid" / "high"
+    expected_upset_rate: float
+    hint: str  # 馬券戦略の一言ヒント
+
+
 class RacePredictionResponse(BaseModel):
     race_id: str
     race_date: datetime.date | None = None
     racecourse_name: str | None = None
     race_name: str | None = None
     model_version: str | None = None
+    upset: UpsetScore | None = None
     predictions: list[PredictionEntry] = []

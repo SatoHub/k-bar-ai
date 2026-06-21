@@ -2,18 +2,50 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import type { PredictionEntry } from "@/lib/api";
+import type { PredictionEntry, UpsetScore } from "@/lib/api";
 import ConfidenceBadge from "./ConfidenceBadge";
 import ShapChart from "./ShapChart";
 
 type Props = {
   predictions: PredictionEntry[];
   modelVersion: string | null;
+  upset?: UpsetScore | null;
 };
 
 const COL_COUNT = 6;
 
-export default function PredictionTable({ predictions, modelVersion }: Props) {
+const UPSET_STYLE: Record<
+  UpsetScore["level"],
+  { label: string; bg: string; fg: string; border: string }
+> = {
+  high: { label: "荒れ度 高", bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca" },
+  mid: { label: "荒れ度 中", bg: "#fffbeb", fg: "#b45309", border: "#fde68a" },
+  low: { label: "荒れ度 低", bg: "#f0fdf4", fg: "#15803d", border: "#bbf7d0" },
+};
+
+function UpsetBanner({ upset }: { upset: UpsetScore }) {
+  const s = UPSET_STYLE[upset.level] ?? UPSET_STYLE.mid;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs"
+      style={{ backgroundColor: s.bg, borderBottom: "1px solid var(--border)" }}
+    >
+      <span
+        className="rounded-full px-2.5 py-0.5 font-semibold"
+        style={{ backgroundColor: "#fff", color: s.fg, border: `1px solid ${s.border}` }}
+      >
+        {s.label}
+      </span>
+      <span style={{ color: s.fg }} className="font-medium">
+        波乱確率 {Math.round(upset.expected_upset_rate * 100)}%
+        <span style={{ opacity: 0.7 }}>（上位{Math.round(upset.percentile * 100)}%）</span>
+      </span>
+      <span style={{ color: "var(--text-secondary)" }}>{upset.hint}</span>
+    </div>
+  );
+}
+
+export default function PredictionTable({ predictions, modelVersion, upset }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (predictions.length === 0) {
@@ -65,6 +97,8 @@ export default function PredictionTable({ predictions, modelVersion }: Props) {
           </span>
         )}
       </div>
+
+      {upset && <UpsetBanner upset={upset} />}
 
       {/* Mobile: card layout */}
       <div className="sm:hidden divide-y" style={{ borderColor: "var(--border)" }}>

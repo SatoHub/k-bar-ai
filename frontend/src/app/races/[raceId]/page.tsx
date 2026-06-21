@@ -279,6 +279,7 @@ export default function RaceDetailPage({
         <PredictionTable
           predictions={predictions.predictions}
           modelVersion={predictions.model_version}
+          upset={predictions.upset}
         />
       )}
 

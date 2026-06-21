@@ -119,6 +119,7 @@ async def get_race_predictions(
             model_version_str = mv.version
 
     pred_entries = []
+    upset_inputs = []
     for p in predictions:
         horse = horses.get(p.horse_id)
         entry = entries.get(p.horse_id)
@@ -135,6 +136,22 @@ async def get_race_predictions(
                 "shap_data": p.shap_data,
             }
         )
+        if entry is not None:
+            upset_inputs.append(
+                {
+                    "win_odds": float(entry.win_odds) if entry.win_odds is not None else None,
+                    "win_favorite": entry.win_favorite,
+                    "predicted_score": p.predicted_score,
+                }
+            )
+
+    # 荒れ度スコア (race-level) — 算出失敗時は None
+    from app.ml.upset_score import score_race
+
+    try:
+        upset = score_race(upset_inputs)
+    except Exception:  # 推論失敗で予想全体を落とさない
+        upset = None
 
     return {
         "race_id": race_id_str,
@@ -142,5 +159,6 @@ async def get_race_predictions(
         "racecourse_name": race.racecourse_name,
         "race_name": race.race_name,
         "model_version": model_version_str,
+        "upset": upset,
         "predictions": pred_entries,
     }
