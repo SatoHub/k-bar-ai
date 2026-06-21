@@ -47,11 +47,11 @@ export default function BetsPage() {
     setLoading(true);
     try {
       const [betsRes, summaryRes] = await Promise.all([
-        fetchBets({ page, per_page: 100 }),
+        fetchBets({ page, per_page: 500 }),
         fetchBetSummary(),
       ]);
       setItems(betsRes.items);
-      setTotalPages(Math.max(1, Math.ceil(betsRes.total / 100)));
+      setTotalPages(Math.max(1, Math.ceil(betsRes.total / 500)));
       setSummary(summaryRes);
     } catch {
       // ignore
