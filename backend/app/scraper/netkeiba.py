@@ -29,6 +29,7 @@ _ODDS_API_URL_TYPED = (
     "?race_id={race_id}&type={odds_type}&action=update"
 )
 _RESULT_URL = "https://race.netkeiba.com/race/result.html?race_id={race_id}"
+_HORSE_CAREER_URL = "https://db.netkeiba.com/horse/result/{netkeiba_id}/"
 
 
 class NetkeibaScraper:
@@ -156,6 +157,17 @@ class NetkeibaScraper:
         result = parse_result(html, race_id)
         logger.info("Result %s: %d entries", race_id, len(result.get("entries", [])))
         return result
+
+    async def scrape_horse_career(self, netkeiba_id: str) -> list[dict]:
+        """Scrape a horse's full career results (surface-split) from netkeiba."""
+        from app.scraper.parsers.horse_career import parse_horse_career
+
+        url = _HORSE_CAREER_URL.format(netkeiba_id=netkeiba_id)
+        await self._base._wait()
+        html = await self._base.fetch_page(url)
+        runs = parse_horse_career(html)
+        logger.info("Career %s: %d runs", netkeiba_id, len(runs))
+        return runs
 
     async def scrape_day(
         self,

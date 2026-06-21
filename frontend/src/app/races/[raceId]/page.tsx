@@ -23,6 +23,7 @@ import {
 } from "@/lib/api";
 import PredictionTable from "@/components/PredictionTable";
 import BudgetSuggestionPanel from "@/components/BudgetSuggestionPanel";
+import SleeperPanel from "@/components/SleeperPanel";
 import EntryTable from "@/components/EntryTable";
 import CourseInfoBadges from "@/components/CourseInfoBadges";
 import OddsChart from "@/components/OddsChart";
@@ -288,6 +289,9 @@ export default function RaceDetailPage({
       {predictions && predictions.predictions.length > 0 && (
         <BudgetSuggestionPanel raceId={race.race_id} entries={race.entries} />
       )}
+
+      {/* 巻き返し穴を探す */}
+      {race.entries.length > 0 && <SleeperPanel raceId={race.race_id} />}
 
       {/* Odds section */}
       {odds && odds.entries.length > 0 && (

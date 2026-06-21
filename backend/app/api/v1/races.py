@@ -19,6 +19,7 @@ from app.schemas.race import (
     RaceDetail,
     RaceListResponse,
     RacePedigreeResponse,
+    SleeperResponse,
     TrackConditionResponse,
 )
 from app.services.horse_service import get_course_aptitude_bulk
@@ -267,6 +268,24 @@ async def post_bet_suggestion(
         bet_types=body.bet_types,
         type_budgets=body.type_budgets,
     )
+    if res is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return res
+
+
+@router.get("/{race_id}/sleepers", response_model=SleeperResponse)
+async def get_sleepers(
+    race_id: str,
+    min_fav: int = Query(5, ge=1, le=18),
+    session: AsyncSession = Depends(get_session),
+):
+    """巻き返し穴の検出。人気薄馬のnetkeiba全成績から今走馬場での実力を評価。
+
+    netkeibaを馬ごとにスクレイプするため時間がかかる(数十秒〜)。
+    """
+    from app.services.sleeper_service import find_sleepers
+
+    res = await find_sleepers(session, race_id, min_fav=min_fav)
     if res is None:
         raise HTTPException(status_code=404, detail="Race not found")
     return res

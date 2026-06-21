@@ -285,3 +285,26 @@ class AptitudeEntry(BaseModel):
 class AptitudeResponse(BaseModel):
     race_id: str
     entries: list[AptitudeEntry] = []
+
+
+class SleeperEntry(BaseModel):
+    post_position: int | None = None
+    bracket_number: int | None = None
+    horse_name: str
+    win_favorite: int | None = None
+    is_sleeper: bool
+    score: float
+    reason: str
+    surface_runs: int
+    surface_place_rate: float
+    has_win: bool
+    graded_good: bool
+    surface_mismatch: bool
+
+
+class SleeperResponse(BaseModel):
+    race_id: str
+    surface: str | None = None
+    analyzed: int  # 分析した頭数
+    entries: list[SleeperEntry] = []  # 穴度の高い順
+    message: str | None = None

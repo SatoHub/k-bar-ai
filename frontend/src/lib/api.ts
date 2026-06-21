@@ -575,6 +575,37 @@ export function fetchBetSuggestion(
   return postJSON<BetSuggestionResponse>(`/races/${raceId}/bet-suggestion`, body);
 }
 
+// 巻き返し穴(sleeper)検出
+export type SleeperEntry = {
+  post_position: number | null;
+  bracket_number: number | null;
+  horse_name: string;
+  win_favorite: number | null;
+  is_sleeper: boolean;
+  score: number;
+  reason: string;
+  surface_runs: number;
+  surface_place_rate: number;
+  has_win: boolean;
+  graded_good: boolean;
+  surface_mismatch: boolean;
+};
+
+export type SleeperResponse = {
+  race_id: string;
+  surface: string | null;
+  analyzed: number;
+  entries: SleeperEntry[];
+  message?: string | null;
+};
+
+export function fetchSleepers(
+  raceId: string,
+  minFav = 5,
+): Promise<SleeperResponse> {
+  return fetchJSON<SleeperResponse>(`/races/${raceId}/sleepers?min_fav=${minFav}`);
+}
+
 export function fetchModels(): Promise<ModelVersionListResponse> {
   return fetchJSON<ModelVersionListResponse>("/models");
 }
