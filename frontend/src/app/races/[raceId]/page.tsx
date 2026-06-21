@@ -286,7 +286,7 @@ export default function RaceDetailPage({
 
       {/* 予算から買い目を自動提案 */}
       {predictions && predictions.predictions.length > 0 && (
-        <BudgetSuggestionPanel raceId={race.race_id} />
+        <BudgetSuggestionPanel raceId={race.race_id} entries={race.entries} />
       )}
 
       {/* Odds section */}

@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 
 # エンジンの券種名 → netkeiba odds の券種名
 ENGINE_TO_NK = {
+    "tansho": "tansho",
     "fukusho": "fukusho",
-    "wide": "wide",
     "umaren": "umaren",
+    "wide": "wide",
+    "umatan": "umatan",
     "trio": "sanrenpuku",
     "trifecta": "sanrentan",
 }

@@ -3,6 +3,8 @@
 from app.services.bet_suggestion import (
     ordered_triple_probs,
     p_fukusho,
+    p_tansho,
+    p_umatan,
     suggest,
     win_probs,
 )
@@ -82,6 +84,19 @@ def test_manual_bet_types_and_budgets():
     # 各券種は指定予算以内
     for s in res["suggestions"]:
         assert s["cost"] <= {"trio": 3000, "trifecta": 2000, "wide": 1000}[s["bet_type"]]
+
+
+def test_tansho_umatan_probs_and_selection():
+    triples = ordered_triple_probs(win_probs(HORSES))
+    # 単勝(1着)確率 < 複勝(3着内)確率
+    assert p_tansho(triples, 1) < p_fukusho(triples, 1)
+    # 馬単(1→2)は単勝(1着)以下
+    assert p_umatan(triples, 1, 2) <= p_tansho(triples, 1)
+    # 全7券種を手動指定して提案できる
+    res = suggest(6000, HORSES, RANKED, "mid",
+                  bet_types=["tansho", "fukusho", "umaren", "wide", "umatan", "trio", "trifecta"])
+    assert res["total_allocated"] <= 6000
+    assert len(res["suggestions"]) >= 4
 
 
 def test_low_budget_drops_unaffordable_bets():

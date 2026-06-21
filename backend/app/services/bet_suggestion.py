@@ -76,6 +76,14 @@ def p_trifecta(triples, a, b, c):  # 三連単
     return triples.get((a, b, c), 0.0)
 
 
+def p_tansho(triples, x):  # 単勝: x が1着
+    return _p_cover(triples, lambda a, b, c: a == x)
+
+
+def p_umatan(triples, x, y):  # 馬単: x→y が1,2着
+    return _p_cover(triples, lambda a, b, c: a == x and b == y)
+
+
 # ---------------------------------------------------------------------------
 # 買い目候補の生成 (荒れ度連動)
 # ---------------------------------------------------------------------------
@@ -138,6 +146,12 @@ def _build_menu(ranked: list[int], horses_by_post: dict, level: str) -> list[dic
 def _item_for_type(bet: str, ranked: list[int], level: str) -> dict | None:
     """券種を手動指定したときの、その券種の標準的な買い目構成。"""
     r = ranked
+    if bet == "tansho" and len(r) >= 1:
+        return {"bet": "tansho", "method": "single", "horses": [r[0]],
+                "rationale": "本命の単勝", "weight": 1}
+    if bet == "umatan" and len(r) >= 4:
+        return {"bet": "umatan", "method": "formation", "sets": [[r[0]], r[1:4]],
+                "rationale": "本命1着→上位への馬単", "weight": 1}
     if bet == "fukusho" and len(r) >= 1:
         return {"bet": "fukusho", "method": "single", "horses": [r[0]],
                 "rationale": "本命の複勝", "weight": 1}
@@ -187,12 +201,16 @@ def _combos_for(item: dict) -> list[tuple]:
 
 
 def _bet_prob(triples, bet, combo) -> float:
+    if bet == "tansho":
+        return p_tansho(triples, combo[0])
     if bet == "fukusho":
         return p_fukusho(triples, combo[0])
     if bet == "wide":
         return p_wide(triples, combo[0], combo[1])
     if bet == "umaren":
         return p_umaren(triples, combo[0], combo[1])
+    if bet == "umatan":
+        return p_umatan(triples, combo[0], combo[1])
     if bet == "trio":
         return p_trio(triples, combo)
     if bet == "trifecta":
