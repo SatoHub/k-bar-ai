@@ -6,8 +6,28 @@ These are pure-function tests — no Playwright or DB needed.
 
 from app.scraper.parsers.odds import parse_odds_json
 from app.scraper.parsers.race_list import parse_race_list
-from app.scraper.parsers.result import parse_result
+from app.scraper.parsers.result import _parse_corners, parse_result
 from app.scraper.parsers.shutuba import parse_shutuba
+
+
+# ---------------------------------------------------------------------------
+# corner passage parser — must RIGHT-align so the final corner is always pos_4
+# (matches the historical training-data convention used by the ML model)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_corners_right_aligned():
+    # 4 corners -> keys 1..4 unchanged
+    assert _parse_corners("5-5-3-2") == {1: "5", 2: "5", 3: "3", 4: "2"}
+    # sprint with 2 corners -> final corner lands in pos_4, not pos_1
+    assert _parse_corners("5-3") == {3: "5", 4: "3"}
+    # 3 corners -> right aligned into 2,3,4
+    assert _parse_corners("8-6-4") == {2: "8", 3: "6", 4: "4"}
+    # single corner -> pos_4
+    assert _parse_corners("7") == {4: "7"}
+    # empty / messy
+    assert _parse_corners("") == {}
+    assert _parse_corners("9-10-11-12-13") == {1: "10", 2: "11", 3: "12", 4: "13"}
 
 
 # ---------------------------------------------------------------------------

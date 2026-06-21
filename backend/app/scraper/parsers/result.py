@@ -264,13 +264,17 @@ def _parse_result_row(row) -> dict | None:
 
 
 def _parse_corners(text: str) -> dict[int, str]:
-    """Parse '5-5-3-2' corner passage into {1: '5', 2: '5', 3: '3', 4: '2'}."""
+    """Parse corner passage into RIGHT-aligned slots so the FINAL corner is
+    always key 4 — matching the historical training-data convention
+    (corner_pos_4 = position at the last corner).
+
+    Races with fewer corners fill the higher keys:
+        '5-5-3-2' -> {1:'5', 2:'5', 3:'3', 4:'2'}   (4 corners)
+        '5-3'     -> {3:'5', 4:'3'}                  (sprint, 2 corners)
+    """
     if not text:
         return {}
-    parts = text.split("-")
-    result: dict[int, str] = {}
-    for i, p in enumerate(parts[:4], start=1):
-        p = p.strip()
-        if p:
-            result[i] = p
-    return result
+    parts = [p.strip() for p in text.split("-") if p.strip()]
+    parts = parts[-4:]  # keep at most the last 4 corners (final corner last)
+    n = len(parts)
+    return {4 - n + 1 + i: p for i, p in enumerate(parts)}

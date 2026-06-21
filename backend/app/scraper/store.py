@@ -379,7 +379,14 @@ def cleanup_scratched_entries(target_date: datetime.date) -> int:
 
 
 def get_races_needing_results(target_date: datetime.date) -> list[str]:
-    """Get race_ids for a date that have entries but no finish results yet."""
+    """Get race_ids for a date whose results are not fully captured yet.
+
+    A race "needs results" if no entry has BOTH a finish_position AND a
+    corner_pos_4. netkeiba posts finish/time immediately but the corner
+    passage (コーナー通過順) appears with a delay, so we keep re-scraping
+    until the corner data lands. The caller's date window (today + past few
+    days) bounds the retries.
+    """
     engine = _get_engine()
     with Session(engine) as session:
         from sqlalchemy import exists
@@ -389,6 +396,7 @@ def get_races_needing_results(target_date: datetime.date) -> list[str]:
             .where(
                 RaceEntry.race_id == Race.id,
                 RaceEntry.finish_position.is_not(None),
+                RaceEntry.corner_pos_4.is_not(None),
             )
             .correlate(Race)
         )
