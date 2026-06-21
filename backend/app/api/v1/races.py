@@ -287,9 +287,13 @@ async def post_hedge(
 
     if body.budget < 200:
         raise HTTPException(status_code=400, detail="予算は200円以上にしてください")
+    allowed = {"tansho", "fukusho", "umaren", "wide", "umatan", "trio", "trifecta"}
+    if body.honmei_bet not in allowed or body.ana_bet not in allowed:
+        raise HTTPException(status_code=400, detail="券種の指定が不正です")
     ratio = min(1.0, max(0.0, body.honmei_ratio))
     res = await suggest_hedge(
-        session, race_id, budget=body.budget, honmei_ratio=ratio, min_fav=body.min_fav
+        session, race_id, budget=body.budget, honmei_ratio=ratio, min_fav=body.min_fav,
+        honmei_bet=body.honmei_bet, ana_bet=body.ana_bet,
     )
     if res is None:
         raise HTTPException(status_code=404, detail="Race not found")

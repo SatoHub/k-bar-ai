@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from itertools import combinations, permutations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +19,74 @@ from app.services.sleeper_service import find_sleepers
 
 logger = logging.getLogger(__name__)
 
+BET_JA = {
+    "tansho": "単勝", "fukusho": "複勝", "umaren": "馬連",
+    "wide": "ワイド", "umatan": "馬単", "trio": "三連複", "trifecta": "三連単",
+}
+
+
+def _uniq(seq):
+    return list(dict.fromkeys(seq))
+
+
+def _honmei_combos(bet: str, h: list[int]) -> list[tuple]:
+    """本命サイド: 予想上位馬での買い目。"""
+    if len(h) < 1:
+        return []
+    if bet in ("tansho", "fukusho"):
+        return [(h[0],)]
+    if bet == "wide":
+        return [tuple(sorted(c)) for c in combinations(h[:3], 2)]
+    if bet == "umaren":
+        return [tuple(sorted(c)) for c in combinations(h[:4], 2)]
+    if bet == "umatan":  # 軸の1・2着マルチ
+        return _uniq([(h[0], b) for b in h[1:4]] + [(a, h[0]) for a in h[1:4]])
+    if bet == "trio":
+        return _uniq([tuple(sorted((h[0], *c))) for c in combinations(h[1:6], 2)])
+    if bet == "trifecta":  # 軸1頭マルチ
+        res = []
+        for c in combinations(h[1:6], 2):
+            res += list(permutations((h[0], *c)))
+        return _uniq(res)
+    return []
+
+
+def _ana_combos(bet: str, ana: list[int], partners: list[int]) -> list[tuple]:
+    """穴サイド: 穴馬 ×（上位＋他穴）の買い目。"""
+    if not ana:
+        return []
+    if bet in ("tansho", "fukusho"):
+        return [(a,) for a in ana]
+    if bet in ("wide", "umaren"):
+        pairs = [tuple(sorted((a, p))) for a in ana for p in partners if a != p]
+        return _uniq(pairs)
+    if bet == "umatan":  # 穴が1着/2着の両取り
+        return _uniq([(a, p) for a in ana for p in partners if a != p]
+                     + [(p, a) for a in ana for p in partners if a != p])
+    if bet == "trio":  # 穴1頭軸 + 相手2頭
+        res = []
+        for a in ana:
+            rest = [p for p in partners if p != a]
+            res += [tuple(sorted((a, *c))) for c in combinations(rest, 2)]
+        return _uniq(res)
+    if bet == "trifecta":  # 穴1頭マルチ
+        res = []
+        for a in ana:
+            rest = [p for p in partners if p != a]
+            for c in combinations(rest, 2):
+                res += list(permutations((a, *c)))
+        return _uniq(res)
+    return []
+
 
 async def suggest_hedge(
     session: AsyncSession,
     race_id_str: str,
     budget: int,
-    honmei_ratio: float = 0.5,  # 本命(三連複)に回す比率
+    honmei_ratio: float = 0.5,  # 本命に回す比率
     min_fav: int = 5,
+    honmei_bet: str = "trio",  # 本命サイドの券種
+    ana_bet: str = "wide",  # 穴サイドの券種
 ) -> dict | None:
     race = await get_race_detail(session, race_id_str)
     if not race:
@@ -69,35 +131,39 @@ async def suggest_hedge(
         if e.get("is_sleeper") and e.get("post_position")
     ]
 
-    honmei = ranked[:5]
+    honmei = ranked[:6]
     honmei_budget = max(0, round(budget * honmei_ratio / 100) * 100)
     ana_budget = budget - honmei_budget
 
+    h_ja, a_ja = BET_JA.get(honmei_bet, honmei_bet), BET_JA.get(ana_bet, ana_bet)
     menu: list[dict] = []
-    type_budgets: dict[str, int] = {}
-    # 本命サイド: 三連複(本命軸→相手)
-    menu.append({
-        "bet": "trio", "method": "nagashi", "axis": [ranked[0]],
-        "partners": ranked[1:6],
-        "rationale": "本命サイド: 人気上位で三連複(順当決着を回収)", "weight": 1,
-    })
-    type_budgets["trio"] = honmei_budget
 
-    coverage = "人気で決着→三連複 / 穴が来る→穴ワイド、で相互カバー。"
-    if sleeper_posts:
-        # 穴サイド: 穴 ×（上位人気＋他の穴）のワイド
-        partners = [p for p in honmei if p not in sleeper_posts]
-        partners += [p for p in sleeper_posts]  # 穴×穴 も少し拾う
+    # 本命サイド
+    h_combos = _honmei_combos(honmei_bet, honmei)
+    if h_combos and honmei_budget >= 100:
         menu.append({
-            "bet": "wide", "method": "formation",
-            "sets": [sleeper_posts, partners],
-            "rationale": "穴サイド: 穴×上位/他穴のワイド(一発を拾う)", "weight": 1,
+            "bet": honmei_bet, "method": "hedge", "combos": h_combos,
+            "axis": [ranked[0]] if honmei_bet in ("trio", "trifecta", "umatan") else None,
+            "horses": honmei[:6],
+            "rationale": f"本命サイド: 人気上位の{h_ja}(順当決着を回収)",
+            "weight": 2, "budget": honmei_budget,
         })
-        type_budgets["wide"] = ana_budget
+
+    coverage = f"人気で決着→{h_ja} / 穴が来る→穴{a_ja}、で相互カバー。"
+    if sleeper_posts:
+        partners = [p for p in honmei if p not in sleeper_posts] + list(sleeper_posts)
+        a_combos = _ana_combos(ana_bet, sleeper_posts, partners)
+        if a_combos and ana_budget >= 100:
+            menu.append({
+                "bet": ana_bet, "method": "hedge", "combos": a_combos,
+                "horses": _uniq(list(sleeper_posts) + partners)[:8],
+                "rationale": f"穴サイド: 穴×上位/他穴の{a_ja}(一発を拾う)",
+                "weight": 1, "budget": ana_budget,
+            })
     else:
-        # 穴が無ければ全額を本命三連複へ
-        type_budgets["trio"] = budget
-        coverage = "穴候補が検出されなかったため、本命の三連複のみ。"
+        coverage = f"穴候補が検出されなかったため、本命の{h_ja}のみ。"
+        if menu:
+            menu[0]["budget"] = budget  # 全額を本命サイドへ
 
     # ライブオッズ取得(trio / wide)
     odds_lookup: dict[str, dict] = {}
@@ -122,7 +188,6 @@ async def suggest_hedge(
         odds_lookup=odds_lookup or None,
         alloc_mode="gami_avoid",
         menu_override=menu,
-        type_budgets=type_budgets,
     )
     res.update(base)
     res["odds_live"] = bool(odds_lookup)

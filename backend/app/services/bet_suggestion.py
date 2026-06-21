@@ -173,6 +173,8 @@ def _item_for_type(bet: str, ranked: list[int], level: str) -> dict | None:
 
 def _combos_for(item: dict) -> list[tuple]:
     """メニュー項目を実際の買い目(馬番タプル)のリストに展開。"""
+    if item.get("combos") is not None:  # 買い目を直接指定(ヘッジ等)
+        return [tuple(c) for c in item["combos"]]
     bet = item["bet"]
     ordered = bet in ("trifecta", "umatan")
     if item["method"] == "single":
@@ -405,7 +407,9 @@ def suggest(
     suggestions = []
     for k, i in enumerate(order):
         rows = i["rows"]
-        if type_budgets is not None:
+        if i.get("budget") is not None:  # 項目ごとに予算指定(ヘッジ等)
+            tb = min(remaining, int(i["budget"]))
+        elif type_budgets is not None:
             tb = min(remaining, int(type_budgets.get(i["bet"], 0)))
         elif k == len(order) - 1:
             tb = remaining  # 最後の券種に残予算を寄せて使い切る

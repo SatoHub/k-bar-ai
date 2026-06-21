@@ -9,14 +9,20 @@ import {
 } from "@/lib/api";
 import { wakuColor } from "./ComboBadges";
 
-const BET_JA: Record<string, string> = { trio: "三連複", wide: "ワイド" };
+const BET_JA: Record<string, string> = {
+  tansho: "単勝", fukusho: "複勝", umaren: "馬連",
+  wide: "ワイド", umatan: "馬単", trio: "三連複", trifecta: "三連単",
+};
+const BET_OPTIONS = ["tansho", "fukusho", "umaren", "wide", "umatan", "trio", "trifecta"];
 const QUICK = [2000, 5000, 10000];
 
 type Props = { raceId: string; entries: RaceEntry[] };
 
 export default function HedgePanel({ raceId, entries }: Props) {
   const [budgetStr, setBudgetStr] = useState("6000");
-  const [ratio, setRatio] = useState(0.5); // 本命(三連複)比率
+  const [ratio, setRatio] = useState(0.5); // 本命比率
+  const [honmeiBet, setHonmeiBet] = useState("trio");
+  const [anaBet, setAnaBet] = useState("wide");
   const [result, setResult] = useState<BetSuggestionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +41,14 @@ export default function HedgePanel({ raceId, entries }: Props) {
     setLoading(true);
     setError(null);
     try {
-      setResult(await fetchHedge(raceId, { budget, honmei_ratio: ratio }));
+      setResult(
+        await fetchHedge(raceId, {
+          budget,
+          honmei_ratio: ratio,
+          honmei_bet: honmeiBet,
+          ana_bet: anaBet,
+        }),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "取得に失敗しました");
     } finally {
@@ -88,9 +101,38 @@ export default function HedgePanel({ raceId, entries }: Props) {
           {invalid && <p className="text-xs mt-1" style={{ color: "#dc2626" }}>200円以上を入力してください</p>}
         </div>
 
+        {/* 券種選択 */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="text-sm flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+            本命
+            <select
+              value={honmeiBet}
+              onChange={(e) => setHonmeiBet(e.target.value)}
+              className="rounded-md px-2 py-1 text-sm"
+              style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+            >
+              {BET_OPTIONS.map((b) => <option key={b} value={b}>{BET_JA[b]}</option>)}
+            </select>
+          </label>
+          <label className="text-sm flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+            穴
+            <select
+              value={anaBet}
+              onChange={(e) => setAnaBet(e.target.value)}
+              className="rounded-md px-2 py-1 text-sm"
+              style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+            >
+              {BET_OPTIONS.map((b) => <option key={b} value={b}>{BET_JA[b]}</option>)}
+            </select>
+          </label>
+        </div>
+
+        {/* 配分 */}
         <div>
           <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-secondary)" }}>
-            <span>配分: 本命(三連複) {Math.round(ratio * 100)}% / 穴(ワイド) {Math.round((1 - ratio) * 100)}%</span>
+            <span>
+              配分: 本命({BET_JA[honmeiBet]}) {Math.round(ratio * 100)}% / 穴({BET_JA[anaBet]}) {Math.round((1 - ratio) * 100)}%
+            </span>
           </div>
           <input
             type="range" min={0} max={100} step={10}

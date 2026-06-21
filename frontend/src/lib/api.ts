@@ -567,6 +567,8 @@ export type HedgeRequest = {
   budget: number;
   honmei_ratio?: number;
   min_fav?: number;
+  honmei_bet?: string;
+  ana_bet?: string;
 };
 
 export function fetchHedge(

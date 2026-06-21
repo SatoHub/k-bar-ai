@@ -52,8 +52,10 @@ class BetSuggestionResponse(BaseModel):
 
 class HedgeRequest(BaseModel):
     budget: int
-    honmei_ratio: float = 0.5  # 本命(三連複)に回す比率 0-1
+    honmei_ratio: float = 0.5  # 本命に回す比率 0-1
     min_fav: int = 5
+    honmei_bet: str = "trio"  # 本命サイドの券種
+    ana_bet: str = "wide"  # 穴サイドの券種
 
 
 class BetRecordCreate(BaseModel):
