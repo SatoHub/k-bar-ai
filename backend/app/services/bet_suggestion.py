@@ -185,7 +185,16 @@ def _combos_for(item: dict) -> list[tuple]:
         return [tuple(c) for c in combos]
     if item["method"] == "formation":
         s1, s2 = item["sets"]
-        return [(a, b) for a in s1 for b in s2 if a != b]
+        pairs = [(a, b) for a in s1 for b in s2 if a != b]
+        if not ordered:  # ワイド/馬連等は順不同→重複ペアを除去
+            seen, out = set(), []
+            for p in pairs:
+                key = tuple(sorted(p))
+                if key not in seen:
+                    seen.add(key)
+                    out.append(p)
+            return out
+        return pairs
     if item["method"] in ("nagashi", "nagashi_multi"):
         axis = item["axis"]
         partners = item["partners"]
@@ -335,6 +344,7 @@ def suggest(
     alloc_mode: str = "gami_avoid",
     bet_types: list[str] | None = None,
     type_budgets: dict[str, int] | None = None,
+    menu_override: list[dict] | None = None,
 ) -> dict:
     """買い目提案を生成。
 
@@ -347,11 +357,15 @@ def suggest(
         alloc_mode: "gami_avoid"(既定) | "odds_weighted" | "flat"。
         bet_types: 券種を手動指定(例 ["trio","trifecta","wide"])。Noneなら荒れ度でおまかせ。
         type_budgets: 券種ごとの予算(例 {"trio":3000,"wide":1000})。Noneなら重み配分。
+        menu_override: 買い目構成を直接指定(ヘッジ等の独自構成用)。指定時は bet_types/
+            おまかせより優先。各item={bet,method,horses|axis+partners|sets,rationale,weight}。
     """
     wp = win_probs(horses)
     triples = ordered_triple_probs(wp)
     by_post = {h["post"]: h for h in horses}
-    if bet_types:  # 券種を手動指定
+    if menu_override is not None:  # 独自構成(ヘッジ等)
+        menu = menu_override
+    elif bet_types:  # 券種を手動指定
         menu = [m for m in (_item_for_type(b, ranked, upset_level) for b in bet_types) if m]
     else:  # おまかせ(荒れ度で自動選択)
         menu = _build_menu(ranked, by_post, upset_level)

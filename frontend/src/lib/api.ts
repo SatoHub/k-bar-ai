@@ -559,7 +559,22 @@ export type BetSuggestionResponse = {
   names: Record<string, string>;
   suggestions: BetSuggestionItem[];
   message?: string | null;
+  coverage_note?: string | null;
+  sleeper_posts?: number[];
 };
+
+export type HedgeRequest = {
+  budget: number;
+  honmei_ratio?: number;
+  min_fav?: number;
+};
+
+export function fetchHedge(
+  raceId: string,
+  body: HedgeRequest,
+): Promise<BetSuggestionResponse> {
+  return postJSON<BetSuggestionResponse>(`/races/${raceId}/hedge`, body);
+}
 
 export type BetSuggestionRequest = {
   budget: number;

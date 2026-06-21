@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.schemas.bet import BetSuggestionRequest, BetSuggestionResponse
+from app.schemas.bet import BetSuggestionRequest, BetSuggestionResponse, HedgeRequest
 from app.schemas.race import (
     AptitudeResponse,
     ComboOddsRequest,
@@ -267,6 +267,29 @@ async def post_bet_suggestion(
         alloc_mode=body.alloc_mode,
         bet_types=body.bet_types,
         type_budgets=body.type_budgets,
+    )
+    if res is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return res
+
+
+@router.post("/{race_id}/hedge", response_model=BetSuggestionResponse)
+async def post_hedge(
+    race_id: str,
+    body: HedgeRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """荒れ対応ヘッジ: 本命=三連複 / 穴=ワイド の2本立て(相互カバー・ガミ防止)。
+
+    穴馬検出でnetkeibaをスクレイプするため時間がかかる(数十秒)。
+    """
+    from app.services.hedge_service import suggest_hedge
+
+    if body.budget < 200:
+        raise HTTPException(status_code=400, detail="予算は200円以上にしてください")
+    ratio = min(1.0, max(0.0, body.honmei_ratio))
+    res = await suggest_hedge(
+        session, race_id, budget=body.budget, honmei_ratio=ratio, min_fav=body.min_fav
     )
     if res is None:
         raise HTTPException(status_code=404, detail="Race not found")

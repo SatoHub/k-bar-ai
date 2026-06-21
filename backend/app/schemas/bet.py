@@ -46,6 +46,14 @@ class BetSuggestionResponse(BaseModel):
     names: dict[str, str] = {}  # 馬番 -> 馬名
     suggestions: list[BetSuggestionItem] = []
     message: str | None = None
+    coverage_note: str | None = None  # ヘッジの相互カバー説明
+    sleeper_posts: list[int] = []  # 穴サイドに使った馬番
+
+
+class HedgeRequest(BaseModel):
+    budget: int
+    honmei_ratio: float = 0.5  # 本命(三連複)に回す比率 0-1
+    min_fav: int = 5
 
 
 class BetRecordCreate(BaseModel):
