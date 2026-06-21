@@ -38,7 +38,7 @@ export default function SleeperPanel({ raceId }: Props) {
       <div className="p-4 space-y-3">
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
           人気薄馬の全成績(netkeiba)を調べ、「今走の馬場で実績があるのに前走の条件替わり等で
-          人気を落とした馬」を炙り出します。馬ごとに取得するため数十秒かかります。
+          人気を落とした馬」を炙り出します。馬ごとに取得するため最大1〜2分かかります。
         </p>
 
         {!result && (
@@ -48,7 +48,7 @@ export default function SleeperPanel({ raceId }: Props) {
             className="rounded-md px-4 py-2 text-sm font-semibold w-full sm:w-auto"
             style={{ backgroundColor: "var(--accent)", color: "#fff", opacity: loading ? 0.6 : 1 }}
           >
-            {loading ? "全成績を解析中…(数十秒)" : "穴馬を探す"}
+            {loading ? "全成績を解析中…(最大1〜2分)" : "穴馬を探す"}
           </button>
         )}
 

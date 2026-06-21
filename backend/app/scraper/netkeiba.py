@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from app.scraper.base import BaseScraper
@@ -163,7 +164,8 @@ class NetkeibaScraper:
         from app.scraper.parsers.horse_career import parse_horse_career
 
         url = _HORSE_CAREER_URL.format(netkeiba_id=netkeiba_id)
-        await self._base._wait()
+        # 馬ごとに連続取得するため待機は短め(1秒)。db.netkeibaは軽いページ。
+        await asyncio.sleep(1.0)
         html = await self._base.fetch_page(url)
         runs = parse_horse_career(html)
         logger.info("Career %s: %d runs", netkeiba_id, len(runs))
