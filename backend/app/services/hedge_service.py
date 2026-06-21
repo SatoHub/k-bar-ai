@@ -29,52 +29,27 @@ def _uniq(seq):
     return list(dict.fromkeys(seq))
 
 
-def _honmei_combos(bet: str, h: list[int]) -> list[tuple]:
-    """本命サイド: 予想上位馬での買い目。"""
-    if len(h) < 1:
+def _leg_combos(bet: str, pool: list[int]) -> list[tuple]:
+    """指定した馬プールの中だけで券種別の買い目を生成。
+    本命=人気上位プール、穴=穴馬プール、と同じロジックで各サイドを組む。
+    """
+    p = pool
+    if len(p) < 1:
         return []
     if bet in ("tansho", "fukusho"):
-        return [(h[0],)]
+        return [(p[0],)]
     if bet == "wide":
-        return [tuple(sorted(c)) for c in combinations(h[:3], 2)]
+        return _uniq([tuple(sorted(c)) for c in combinations(p[:4], 2)])
     if bet == "umaren":
-        return [tuple(sorted(c)) for c in combinations(h[:4], 2)]
-    if bet == "umatan":  # 軸の1・2着マルチ
-        return _uniq([(h[0], b) for b in h[1:4]] + [(a, h[0]) for a in h[1:4]])
+        return _uniq([tuple(sorted(c)) for c in combinations(p[:4], 2)])
+    if bet == "umatan":  # 先頭軸の1・2着マルチ
+        return _uniq([(p[0], b) for b in p[1:4]] + [(a, p[0]) for a in p[1:4]])
     if bet == "trio":
-        return _uniq([tuple(sorted((h[0], *c))) for c in combinations(h[1:6], 2)])
-    if bet == "trifecta":  # 軸1頭マルチ
+        return _uniq([tuple(sorted((p[0], *c))) for c in combinations(p[1:6], 2)])
+    if bet == "trifecta":  # 先頭1頭マルチ
         res = []
-        for c in combinations(h[1:6], 2):
-            res += list(permutations((h[0], *c)))
-        return _uniq(res)
-    return []
-
-
-def _ana_combos(bet: str, ana: list[int], partners: list[int]) -> list[tuple]:
-    """穴サイド: 穴馬 ×（上位＋他穴）の買い目。"""
-    if not ana:
-        return []
-    if bet in ("tansho", "fukusho"):
-        return [(a,) for a in ana]
-    if bet in ("wide", "umaren"):
-        pairs = [tuple(sorted((a, p))) for a in ana for p in partners if a != p]
-        return _uniq(pairs)
-    if bet == "umatan":  # 穴が1着/2着の両取り
-        return _uniq([(a, p) for a in ana for p in partners if a != p]
-                     + [(p, a) for a in ana for p in partners if a != p])
-    if bet == "trio":  # 穴1頭軸 + 相手2頭
-        res = []
-        for a in ana:
-            rest = [p for p in partners if p != a]
-            res += [tuple(sorted((a, *c))) for c in combinations(rest, 2)]
-        return _uniq(res)
-    if bet == "trifecta":  # 穴1頭マルチ
-        res = []
-        for a in ana:
-            rest = [p for p in partners if p != a]
-            for c in combinations(rest, 2):
-                res += list(permutations((a, *c)))
+        for c in combinations(p[1:6], 2):
+            res += list(permutations((p[0], *c)))
         return _uniq(res)
     return []
 
@@ -124,46 +99,58 @@ async def suggest_hedge(
         return {**base, "odds_live": False, "total_allocated": 0, "suggestions": [],
                 "message": "予想またはオッズが不足しています"}
 
-    # 穴馬を検出（is_sleeper のみ採用）。応答時間短縮のため頭数を抑制。
+    # 穴馬を検出（応答時間短縮のため頭数を抑制）
     sleepers_res = await find_sleepers(session, race_id_str, min_fav=min_fav, max_horses=10)
-    sleeper_posts = [
-        e["post_position"] for e in (sleepers_res or {}).get("entries", [])
-        if e.get("is_sleeper") and e.get("post_position")
-    ]
+    sleeper_entries = (sleepers_res or {}).get("entries", [])  # 穴度の高い順
 
-    honmei = ranked[:6]
+    honmei = ranked[:5]  # 本命プール = 予想(人気)上位
+    honmei_set = set(honmei)
+
+    # 穴プール = 穴馬同士の組み合わせ用。検出した穴(穴度順)を優先し、不足分は
+    # 人気薄(min_fav番人気以下)で補完。本命プールとは重複させない。
+    ana_pool: list[int] = []
+    for e in sleeper_entries:
+        p = e.get("post_position")
+        if p and e.get("is_sleeper") and p not in honmei_set and p not in ana_pool:
+            ana_pool.append(p)
+    for h in sorted(horses, key=lambda x: (x.get("win_favorite") or 99)):
+        p = h["post"]
+        if (h.get("win_favorite") or 99) >= min_fav and p not in honmei_set and p not in ana_pool:
+            ana_pool.append(p)
+    ana_pool = ana_pool[:5]
+
     honmei_budget = max(0, round(budget * honmei_ratio / 100) * 100)
     ana_budget = budget - honmei_budget
-
     h_ja, a_ja = BET_JA.get(honmei_bet, honmei_bet), BET_JA.get(ana_bet, ana_bet)
     menu: list[dict] = []
 
-    # 本命サイド
-    h_combos = _honmei_combos(honmei_bet, honmei)
+    # 本命サイド: 人気上位の組み合わせ
+    h_combos = _leg_combos(honmei_bet, honmei)
     if h_combos and honmei_budget >= 100:
         menu.append({
             "bet": honmei_bet, "method": "hedge", "combos": h_combos,
-            "axis": [ranked[0]] if honmei_bet in ("trio", "trifecta", "umatan") else None,
-            "horses": honmei[:6],
-            "rationale": f"本命サイド: 人気上位の{h_ja}(順当決着を回収)",
+            "axis": [honmei[0]] if honmei_bet in ("trio", "trifecta", "umatan") else None,
+            "horses": honmei,
+            "rationale": f"本命サイド: 人気上位馬の{h_ja}(順当決着を回収)",
             "weight": 2, "budget": honmei_budget,
         })
 
-    coverage = f"人気で決着→{h_ja} / 穴が来る→穴{a_ja}、で相互カバー。"
-    if sleeper_posts:
-        partners = [p for p in honmei if p not in sleeper_posts] + list(sleeper_posts)
-        a_combos = _ana_combos(ana_bet, sleeper_posts, partners)
-        if a_combos and ana_budget >= 100:
-            menu.append({
-                "bet": ana_bet, "method": "hedge", "combos": a_combos,
-                "horses": _uniq(list(sleeper_posts) + partners)[:8],
-                "rationale": f"穴サイド: 穴×上位/他穴の{a_ja}(一発を拾う)",
-                "weight": 1, "budget": ana_budget,
-            })
-    else:
-        coverage = f"穴候補が検出されなかったため、本命の{h_ja}のみ。"
-        if menu:
-            menu[0]["budget"] = budget  # 全額を本命サイドへ
+    # 穴サイド: 穴馬同士の組み合わせ
+    a_combos = _leg_combos(ana_bet, ana_pool)
+    coverage = f"人気で決着→本命{h_ja} / 穴で決着→穴{a_ja}、で相互カバー。"
+    if a_combos and ana_budget >= 100:
+        menu.append({
+            "bet": ana_bet, "method": "hedge", "combos": a_combos,
+            "axis": [ana_pool[0]] if ana_bet in ("trio", "trifecta", "umatan") else None,
+            "horses": ana_pool,
+            "rationale": f"穴サイド: 穴馬同士の{a_ja}(波乱を拾う)",
+            "weight": 1, "budget": ana_budget,
+        })
+    elif menu:
+        coverage = f"穴馬が不足のため、本命の{h_ja}のみ。"
+        menu[0]["budget"] = budget  # 全額を本命サイドへ
+
+    sleeper_posts = ana_pool
 
     # ライブオッズ取得(trio / wide)
     odds_lookup: dict[str, dict] = {}

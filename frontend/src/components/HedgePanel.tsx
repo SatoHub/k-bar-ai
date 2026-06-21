@@ -207,7 +207,8 @@ function LegCard({
   names: Record<string, string>;
 }) {
   const stake = s.stake_min === s.stake_max ? `${s.stake_min}円` : `${s.stake_min}〜${s.stake_max}円`;
-  const horses = s.axis && s.axis.length > 0 ? [...s.axis, ...s.horses] : s.horses;
+  // 軸と相手で重複する馬番を除去(軸が相手リストにも含まれるため)
+  const horses = Array.from(new Set([...(s.axis ?? []), ...s.horses]));
   return (
     <div className="rounded-lg p-3" style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2 flex-wrap">
