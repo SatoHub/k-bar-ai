@@ -520,6 +520,54 @@ export function fetchPredictions(
   return fetchJSON<RacePredictionResponse>(`/predictions/${raceId}`);
 }
 
+// 予算指定の買い目自動提案
+export type BetSuggestionItem = {
+  bet_type: string;
+  method: string;
+  axis: number[] | null;
+  horses: number[];
+  points: number;
+  dropped_points: number;
+  stake_min: number;
+  stake_max: number;
+  cost: number;
+  hit_rate: number;
+  ev_ratio: number;
+  payout_min: number;
+  payout_max: number;
+  gami_free: boolean;
+  odds_estimated: boolean;
+  rationale: string;
+  recommended: boolean;
+};
+
+export type BetSuggestionResponse = {
+  race_id: string;
+  race_name: string | null;
+  budget: number;
+  upset_level: string;
+  alloc_mode: string;
+  odds_live: boolean;
+  total_allocated: number;
+  names: Record<string, string>;
+  suggestions: BetSuggestionItem[];
+  message?: string | null;
+};
+
+export type BetSuggestionRequest = {
+  budget: number;
+  alloc_mode?: string;
+  bet_types?: string[] | null;
+  type_budgets?: Record<string, number> | null;
+};
+
+export function fetchBetSuggestion(
+  raceId: string,
+  body: BetSuggestionRequest,
+): Promise<BetSuggestionResponse> {
+  return postJSON<BetSuggestionResponse>(`/races/${raceId}/bet-suggestion`, body);
+}
+
 export function fetchModels(): Promise<ModelVersionListResponse> {
   return fetchJSON<ModelVersionListResponse>("/models");
 }

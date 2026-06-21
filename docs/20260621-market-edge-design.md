@@ -164,7 +164,8 @@ win_odds/win_favorite＋p_main から API応答時に算出）。
 - Frontend: `PredictionTable` に荒れ度バナー（高/中/低＋波乱確率＋戦略ヒント）。型=`api.ts::UpsetScore`。
 - 検証: 6/21府中牝馬S → **荒れ度 high・波乱69%・上位1%**（あの大荒れを事前警告できた）。
   実DBレース → mid。型チェック・サービスimport・E2E(get_race_predictions)すべて通過。
-- ⚠️ 本番反映は未実施（VPSへ `upset_score.joblib` 転送＋push が必要・ユーザー判断待ち）。
+- ✅ 本番反映済（2026-06-21・commit 247c959）。`upset_score.joblib` はgit管理でbackend imageにCOPY。
+  本番API `/predictions/202605030611` が `upset: high` を返すこと実証済。
 
 ## 7. Phase 2 検証結果（2026-06-21・脚質/展開 = ✅ 有効）
 
@@ -190,9 +191,10 @@ odds非依存モデルに追加。荒れ判定上位30%(1,669R)で3つのヒモ�
 
 - [x] Phase1: 荒れ度スコア検証(✅) → **製品化完了**(API/UI統合・検証済)
 - [x] Phase2核心: 脚質/展開でヒモ妙味が改善するか検証 → **✅ 人気薄捕捉+15pt**
-- [ ] Phase2 本番化（残り・**前向きデータ収集が必要**）:
-  - [ ] 結果スクレイパー改修で `corner_pos` を現在レースでも取得（現状2026は0%）
+- [x] 荒れ度スコアのVPS本番反映（commit 247c959・本番API実証済）
+- [x] Phase2-A: 結果スクレイパー改修で `corner_pos` を右寄せ取得＋通過順遅延掲載に再取得対応
+  （commit 211fdf0・本番反映済。⚠️現在レースの実コーナー値はnetkeiba掲載後の再スクレイプで蓄積される）
+- [ ] Phase2 本番化（残り）:
   - [ ] 脚質/展開を本番予想モデルに統合＋荒れ時にヒモ妙味候補をUI表示
   - [ ] オッズ変動(`odds_snapshots`)特徴量（数週間の蓄積が前提）
-- [ ] 荒れ度スコアのVPS本番反映（joblib転送＋push）
 - [ ] Phase3: パドック評価の手入力UI → 効果検証 → CV自動化

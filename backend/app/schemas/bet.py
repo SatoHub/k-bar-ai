@@ -5,6 +5,49 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 
+# --- 予算指定の買い目提案 ---
+
+
+class BetSuggestionRequest(BaseModel):
+    budget: int  # 予算(円)
+    alloc_mode: str = "gami_avoid"  # gami_avoid | odds_weighted | flat
+    bet_types: list[str] | None = None  # 券種手動指定(None=荒れ度でおまかせ)
+    type_budgets: dict[str, int] | None = None  # 券種別予算
+
+
+class BetSuggestionItem(BaseModel):
+    bet_type: str
+    method: str
+    axis: list[int] | None = None
+    horses: list[int] = []
+    points: int
+    dropped_points: int = 0
+    stake_min: int
+    stake_max: int
+    cost: int
+    hit_rate: float
+    ev_ratio: float
+    payout_min: int
+    payout_max: int
+    gami_free: bool
+    odds_estimated: bool
+    rationale: str
+    recommended: bool
+
+
+class BetSuggestionResponse(BaseModel):
+    race_id: str
+    race_name: str | None = None
+    budget: int
+    upset_level: str
+    alloc_mode: str
+    odds_live: bool
+    total_allocated: int
+    names: dict[str, str] = {}  # 馬番 -> 馬名
+    suggestions: list[BetSuggestionItem] = []
+    message: str | None = None
+
+
 class BetRecordCreate(BaseModel):
     race_id: uuid.UUID | None = None
     bet_date: datetime.date

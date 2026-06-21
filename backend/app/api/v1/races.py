@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.schemas.bet import BetSuggestionRequest, BetSuggestionResponse
 from app.schemas.race import (
     AptitudeResponse,
     ComboOddsRequest,
@@ -244,6 +245,31 @@ async def get_odds_table(
         official_datetime=parsed.get("official_datetime"),
         combos=combos,
     )
+
+
+@router.post("/{race_id}/bet-suggestion", response_model=BetSuggestionResponse)
+async def post_bet_suggestion(
+    race_id: str,
+    body: BetSuggestionRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """予算から券種・買い目・配分を自動提案(おまかせ＝荒れ度連動／ガミ防止)。"""
+    from app.services.bet_suggestion_service import suggest_bets
+
+    if body.budget < 100:
+        raise HTTPException(status_code=400, detail="予算は100円以上にしてください")
+
+    res = await suggest_bets(
+        session,
+        race_id,
+        budget=body.budget,
+        alloc_mode=body.alloc_mode,
+        bet_types=body.bet_types,
+        type_budgets=body.type_budgets,
+    )
+    if res is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return res
 
 
 @router.get("/{race_id}/aptitude", response_model=AptitudeResponse)

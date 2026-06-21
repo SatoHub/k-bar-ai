@@ -22,6 +22,7 @@ import {
   type TrackConditionResponse,
 } from "@/lib/api";
 import PredictionTable from "@/components/PredictionTable";
+import BudgetSuggestionPanel from "@/components/BudgetSuggestionPanel";
 import EntryTable from "@/components/EntryTable";
 import CourseInfoBadges from "@/components/CourseInfoBadges";
 import OddsChart from "@/components/OddsChart";
@@ -281,6 +282,11 @@ export default function RaceDetailPage({
           modelVersion={predictions.model_version}
           upset={predictions.upset}
         />
+      )}
+
+      {/* 予算から買い目を自動提案 */}
+      {predictions && predictions.predictions.length > 0 && (
+        <BudgetSuggestionPanel raceId={race.race_id} />
       )}
 
       {/* Odds section */}
