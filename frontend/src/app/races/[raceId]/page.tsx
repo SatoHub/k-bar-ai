@@ -28,7 +28,6 @@ import HedgePanel from "@/components/HedgePanel";
 import EntryTable from "@/components/EntryTable";
 import CourseInfoBadges from "@/components/CourseInfoBadges";
 import OddsChart from "@/components/OddsChart";
-import AllOddsTabs from "@/components/AllOddsTabs";
 import ConfirmedResults from "@/components/ConfirmedResults";
 import TrackConditionInfo from "@/components/TrackConditionInfo";
 
@@ -395,11 +394,6 @@ export default function RaceDetailPage({
 
       {/* 確定オッズ・払戻（JRA-VAN） */}
       <ConfirmedResults confirmed={confirmed} entries={race.entries} />
-
-      {/* 全券種オッズ（タブ） */}
-      {race.entries.length > 0 && (
-        <AllOddsTabs raceIdStr={race.race_id} entries={race.entries} />
-      )}
 
       {/* Odds history chart */}
       {oddsHistory && oddsHistory.history.length >= 2 && (
