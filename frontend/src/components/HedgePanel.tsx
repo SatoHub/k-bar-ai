@@ -111,7 +111,11 @@ export default function HedgePanel({ raceId, entries }: Props) {
               className="rounded-md px-2 py-1 text-sm"
               style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
             >
-              {BET_OPTIONS.map((b) => <option key={b} value={b}>{BET_JA[b]}</option>)}
+              {BET_OPTIONS.map((b) => (
+                <option key={b} value={b} style={{ backgroundColor: "#1e2530", color: "#ffffff" }}>
+                  {BET_JA[b]}
+                </option>
+              ))}
             </select>
           </label>
           <label className="text-sm flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
@@ -122,7 +126,11 @@ export default function HedgePanel({ raceId, entries }: Props) {
               className="rounded-md px-2 py-1 text-sm"
               style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
             >
-              {BET_OPTIONS.map((b) => <option key={b} value={b}>{BET_JA[b]}</option>)}
+              {BET_OPTIONS.map((b) => (
+                <option key={b} value={b} style={{ backgroundColor: "#1e2530", color: "#ffffff" }}>
+                  {BET_JA[b]}
+                </option>
+              ))}
             </select>
           </label>
         </div>
