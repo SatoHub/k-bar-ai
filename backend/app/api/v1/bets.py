@@ -32,7 +32,7 @@ async def create(data: BetRecordCreate, session: AsyncSession = Depends(get_sess
 @router.get("", response_model=BetListResponse)
 async def list_bets(
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
+    per_page: int = Query(20, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
     items, total = await get_bets(session, page=page, per_page=per_page)
