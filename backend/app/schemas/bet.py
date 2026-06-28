@@ -15,11 +15,19 @@ class BetSuggestionRequest(BaseModel):
     type_budgets: dict[str, int] | None = None  # 券種別予算
 
 
+class BetCombo(BaseModel):
+    combo: list[int]  # 馬番(順序付き券種は着順、それ以外は昇順)
+    stake: int  # この1点の掛け金(円)
+    odds: float | None = None  # 1点のオッズ(倍)
+    payout: int | None = None  # 的中時の払戻(円)
+
+
 class BetSuggestionItem(BaseModel):
     bet_type: str
     method: str
     axis: list[int] | None = None
     horses: list[int] = []
+    combos: list[BetCombo] = []  # 実際に買う組み合わせ一覧
     points: int
     dropped_points: int = 0
     stake_min: int
