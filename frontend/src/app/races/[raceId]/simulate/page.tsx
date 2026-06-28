@@ -21,6 +21,7 @@ import BettingSimulator, {
   type SessionBet,
 } from "@/components/BettingSimulator";
 import BetMethodComparison from "@/components/BetMethodComparison";
+import HedgePanel from "@/components/HedgePanel";
 
 export default function SimulatePage({
   params,
@@ -620,6 +621,13 @@ export default function SimulatePage({
           />
         </div>
       </div>
+
+      {/* 荒れ対応ヘッジ(本命/穴の相互カバー) — 全幅 */}
+      {predictions && predictions.predictions.length > 0 && (
+        <div className="mt-6">
+          <HedgePanel raceId={race.race_id} entries={race.entries} />
+        </div>
+      )}
     </div>
   );
 }

@@ -22,7 +22,6 @@ import {
 import PredictionTable from "@/components/PredictionTable";
 import BudgetSuggestionPanel from "@/components/BudgetSuggestionPanel";
 import SleeperPanel from "@/components/SleeperPanel";
-import HedgePanel from "@/components/HedgePanel";
 import EntryTable from "@/components/EntryTable";
 import CourseInfoBadges from "@/components/CourseInfoBadges";
 import ConfirmedResults from "@/components/ConfirmedResults";
@@ -281,11 +280,6 @@ export default function RaceDetailPage({
 
       {/* 巻き返し穴を探す */}
       {race.entries.length > 0 && <SleeperPanel raceId={race.race_id} />}
-
-      {/* 荒れ対応ヘッジ(本命三連複+穴ワイド) */}
-      {predictions && predictions.predictions.length > 0 && (
-        <HedgePanel raceId={race.race_id} entries={race.entries} />
-      )}
 
       {/* Odds section */}
       {odds && odds.entries.length > 0 && (
