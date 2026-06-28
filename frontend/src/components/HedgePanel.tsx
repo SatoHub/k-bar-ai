@@ -207,8 +207,8 @@ function LegCard({
   names: Record<string, string>;
 }) {
   const stake = s.stake_min === s.stake_max ? `${s.stake_min}円` : `${s.stake_min}〜${s.stake_max}円`;
-  // 軸と相手で重複する馬番を除去(軸が相手リストにも含まれるため)
-  const horses = Array.from(new Set([...(s.axis ?? []), ...s.horses]));
+  const axisSet = new Set(s.axis ?? []);
+  const combos = s.combos ?? [];
   return (
     <div className="rounded-lg p-3" style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2 flex-wrap">
@@ -231,14 +231,43 @@ function LegCard({
         想定的中率 {(s.hit_rate * 100).toFixed(1)}% / 払戻 {s.payout_min.toLocaleString()}〜{s.payout_max.toLocaleString()}円
         {s.odds_estimated ? "(推定)" : ""}
       </div>
-      <div className="flex items-center gap-1 flex-wrap mt-1.5">
-        {s.axis && s.axis.length > 0 && <span className="text-xs" style={{ color: "var(--text-secondary)" }}>軸</span>}
-        {horses.slice(0, 12).map((p, i) => (
-          <span key={i} className="inline-flex items-center gap-0.5" title={names[String(p)] ?? ""}>
-            <Badge post={p} bracket={bracketByPost[p] ?? null} />
-          </span>
-        ))}
-      </div>
+      {s.axis && s.axis.length > 0 && (
+        <div className="flex items-center gap-1 flex-wrap mt-1.5">
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>軸</span>
+          {s.axis.map((p, i) => (
+            <span key={i} className="inline-flex items-center gap-0.5" title={names[String(p)] ?? ""}>
+              <Badge post={p} bracket={bracketByPost[p] ?? null} />
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* 実際に買う組み合わせ一覧 */}
+      {combos.length > 0 && (
+        <div className="mt-2 space-y-1">
+          <div className="text-[11px]" style={{ color: "var(--text-secondary)" }}>買い目（{combos.length}点）</div>
+          {combos.map((c, i) => (
+            <div key={i} className="flex items-center gap-1.5 flex-wrap text-xs">
+              <div className="flex items-center gap-0.5">
+                {c.combo.map((p, j) => (
+                  <React.Fragment key={j}>
+                    {j > 0 && <span style={{ color: "var(--text-secondary)" }}>-</span>}
+                    <span title={names[String(p)] ?? ""} className="inline-flex items-center">
+                      <Badge post={p} bracket={bracketByPost[p] ?? null} />
+                      {axisSet.has(p) && <span className="text-[9px] ml-0.5" style={{ color: "var(--accent)" }}>軸</span>}
+                    </span>
+                  </React.Fragment>
+                ))}
+              </div>
+              <span className="tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                {c.stake.toLocaleString()}円
+                {c.odds != null && ` × ${c.odds.toFixed(1)}倍`}
+                {c.payout != null && ` = ${c.payout.toLocaleString()}円`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

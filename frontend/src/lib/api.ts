@@ -533,6 +533,7 @@ export type BetSuggestionItem = {
   method: string;
   axis: number[] | null;
   horses: number[];
+  combos?: { combo: number[]; stake: number; odds: number | null; payout: number | null }[];
   points: number;
   dropped_points: number;
   stake_min: number;

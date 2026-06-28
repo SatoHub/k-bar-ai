@@ -426,14 +426,25 @@ def suggest(
         remaining -= cost
 
         kept = [(r, s) for r, s in zip(rows, stakes) if s > 0]
+        kept.sort(key=lambda rs: -rs[0]["prob"])  # 的中しやすい順
         payouts = [r["odds"] * s for r, s in kept]
         exp_return = sum(r["prob"] * r["odds"] * s for r, s in kept)
         min_payout = round(min(payouts)) if payouts else 0
+        combos_out = [
+            {
+                "combo": list(r["combo"]),
+                "stake": s,
+                "odds": round(r["odds"], 1) if r["odds"] else None,
+                "payout": round(r["odds"] * s) if r["odds"] else None,
+            }
+            for r, s in kept
+        ]
         suggestions.append({
             "bet_type": i["bet"],
             "method": i["method"],
             "horses": i.get("horses") or i.get("partners") or [],
             "axis": i.get("axis"),
+            "combos": combos_out,  # 実際に買う組み合わせ(馬番・掛け金・オッズ)
             "points": len(kept),
             "dropped_points": len(dropped),  # ガミ回避で除外した買い目数
             "stake_min": min((s for _, s in kept), default=0),
