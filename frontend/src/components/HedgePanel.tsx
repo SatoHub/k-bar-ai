@@ -67,8 +67,8 @@ export default function HedgePanel({ raceId, entries }: Props) {
 
       <div className="p-4 space-y-3">
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          人気で決着→三連複、穴が来る→穴ワイド、で相互カバー。各サイドともガミ防止配分。
-          穴は全成績から自動検出するため最大1〜2分かかります。
+          人気で決着→本命サイド、本命+人気薄の中間決着→穴サイド(本命軸×穴)、で相互カバー。
+          各サイドともガミ防止配分。穴は全成績から自動検出するため最大1〜2分かかります。
         </p>
 
         <div>

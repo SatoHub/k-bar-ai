@@ -54,6 +54,40 @@ def _leg_combos(bet: str, pool: list[int]) -> list[tuple]:
     return []
 
 
+def _mixed_combos(bet: str, honmei: list[int], ana_pool: list[int]) -> list[tuple]:
+    """本命軸 × 穴 の混在買い目。本命2＋穴1 / 本命1＋穴2 の「中間決着」を拾う。
+
+    純粋な本命サイド(本命3頭)と純粋な穴サイド(穴3頭)の間で取りこぼしていた、
+    「本命が2頭来て3頭目に人気薄が突っ込む」決着をカバーするための構成。
+    """
+    h, a = honmei, ana_pool
+    if not h or not a:
+        return []
+    if bet == "trio":
+        # 本命1頭軸 + 相手(本命2〜4位 + 穴上位3頭)から2頭
+        axis = h[0]
+        partners = [p for p in _uniq(h[1:4] + a[:3]) if p != axis]
+        return _uniq([tuple(sorted((axis, x, y))) for x, y in combinations(partners, 2)])
+    if bet == "trifecta":
+        # 本命1頭マルチ(全着順) + 相手(本命2〜3位 + 穴上位3頭)から2頭
+        axis = h[0]
+        partners = [p for p in _uniq(h[1:3] + a[:3]) if p != axis]
+        res = []
+        for x, y in combinations(partners, 2):
+            res += list(permutations((axis, x, y)))
+        return _uniq(res)
+    if bet in ("wide", "umaren"):
+        # 本命上位2頭 × 穴上位3頭 のペア
+        return _uniq([tuple(sorted((hh, aa))) for hh in h[:2] for aa in a[:3] if hh != aa])
+    if bet == "umatan":
+        # 本命1頭 ⇔ 穴上位3頭(1・2着マルチ)
+        hh = h[0]
+        return _uniq([(hh, aa) for aa in a[:3]] + [(aa, hh) for aa in a[:3]])
+    if bet in ("tansho", "fukusho"):
+        return [(a[0],)]  # 単複は混在の意味が薄いので穴の単複
+    return []
+
+
 async def suggest_hedge(
     session: AsyncSession,
     race_id_str: str,
@@ -135,15 +169,18 @@ async def suggest_hedge(
             "weight": 2, "budget": honmei_budget,
         })
 
-    # 穴サイド: 穴馬同士の組み合わせ
-    a_combos = _leg_combos(ana_bet, ana_pool)
-    coverage = f"人気で決着→本命{h_ja} / 穴で決着→穴{a_ja}、で相互カバー。"
+    # 穴サイド: 本命軸 × 穴 の混在フォーメーション(本命2＋穴1の中間決着を拾う)
+    a_combos = _mixed_combos(ana_bet, honmei, ana_pool)
+    coverage = (
+        f"人気で決着→本命{h_ja} / 本命+人気薄の中間決着→本命軸×穴{a_ja}、で相互カバー。"
+    )
+    a_axis = [honmei[0]] if ana_bet in ("trio", "trifecta", "umatan") else None
     if a_combos and ana_budget >= 100:
         menu.append({
             "bet": ana_bet, "method": "hedge", "combos": a_combos,
-            "axis": [ana_pool[0]] if ana_bet in ("trio", "trifecta", "umatan") else None,
-            "horses": ana_pool,
-            "rationale": f"穴サイド: 穴馬同士の{a_ja}(波乱を拾う)",
+            "axis": a_axis,
+            "horses": _uniq(honmei[:2] + ana_pool[:3]),
+            "rationale": f"穴サイド: 本命軸×穴の{a_ja}(本命2+穴1の中間決着を拾う)",
             "weight": 1, "budget": ana_budget,
         })
     elif menu:

@@ -103,3 +103,24 @@ def test_low_budget_drops_unaffordable_bets():
     res = suggest(500, HORSES, RANKED, "low")
     assert res["total_allocated"] <= 500
     assert len(res["suggestions"]) >= 1
+
+
+def test_hedge_mixed_covers_honmei2_plus_ana1():
+    """穴サイドの混在フォーメーションが「本命2＋穴1」の中間決着を拾えること。
+
+    回帰: 旧実装は穴サイドが穴馬3頭のみで、本命2頭＋人気薄1頭の決着を
+    1点も買えず取りこぼしていた(福島11Rラジオ NIKKEI賞で実損)。
+    """
+    from app.services.hedge_service import _leg_combos, _mixed_combos
+
+    honmei = [5, 6, 12, 13, 14]   # AI上位5頭の馬番
+    ana_pool = [1, 3, 8, 9, 2]    # 人気薄プール(8=実2着の人気薄)
+    win = tuple(sorted((13, 8, 5)))  # 本命2(13,5)+穴1(8)の的中三連複
+
+    old = _leg_combos("trio", ana_pool)       # 旧: 穴馬同士のみ
+    mixed = _mixed_combos("trio", honmei, ana_pool)  # 新: 本命軸×穴
+
+    assert win not in old           # 旧ロジックでは拾えない(取りこぼし再現)
+    assert win in mixed             # 新ロジックでは買い目に含まれる
+    # 軸は本命1番手に固定され、全買い目に含まれる
+    assert all(honmei[0] in c for c in mixed)
