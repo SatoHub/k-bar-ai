@@ -61,14 +61,14 @@ export default function HedgePanel({ raceId, entries }: Props) {
       <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: "var(--accent)" }} />
         <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-          荒れ対応ヘッジ（本命=三連複 / 穴=ワイド）
+          荒れ対応ヘッジ（本命2頭マルチ軸で広くカバー）
         </h2>
       </div>
 
       <div className="p-4 space-y-3">
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          人気で決着→本命サイド、本命+人気薄の中間決着→穴サイド(本命軸×穴)、で相互カバー。
-          各サイドともガミ防止配分。穴は全成績から自動検出するため最大1〜2分かかります。
+          メイン＝本命2頭マルチ軸のフォーメーションで順当〜やや波乱を連続カバー（本命のどちらか1頭絡みで的中）。
+          荒れ度が高いときは穴3頭の保険を追加。各サイドともガミ防止配分。穴検出に最大1〜2分かかります。
         </p>
 
         <div>
@@ -104,7 +104,7 @@ export default function HedgePanel({ raceId, entries }: Props) {
         {/* 券種選択 */}
         <div className="flex items-center gap-3 flex-wrap">
           <label className="text-sm flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-            本命
+            メイン
             <select
               value={honmeiBet}
               onChange={(e) => setHonmeiBet(e.target.value)}
@@ -119,7 +119,7 @@ export default function HedgePanel({ raceId, entries }: Props) {
             </select>
           </label>
           <label className="text-sm flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-            穴
+            保険(大波乱)
             <select
               value={anaBet}
               onChange={(e) => setAnaBet(e.target.value)}
@@ -139,7 +139,7 @@ export default function HedgePanel({ raceId, entries }: Props) {
         <div>
           <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-secondary)" }}>
             <span>
-              配分: 本命({BET_JA[honmeiBet]}) {Math.round(ratio * 100)}% / 穴({BET_JA[anaBet]}) {Math.round((1 - ratio) * 100)}%
+              配分: メイン({BET_JA[honmeiBet]}) {Math.round(ratio * 100)}% / 保険({BET_JA[anaBet]}) {Math.round((1 - ratio) * 100)}%
             </span>
           </div>
           <input

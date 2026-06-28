@@ -29,62 +29,75 @@ def _uniq(seq):
     return list(dict.fromkeys(seq))
 
 
-def _leg_combos(bet: str, pool: list[int]) -> list[tuple]:
-    """指定した馬プールの中だけで券種別の買い目を生成。
-    本命=人気上位プール、穴=穴馬プール、と同じロジックで各サイドを組む。
+# 荒れ度ごとの「広さ」: (対抗の頭数, 穴の頭数)。highほど穴まで広げる。
+_WIDTH = {"low": (2, 1), "mid": (2, 2), "high": (3, 3)}
+
+
+def _spectrum_combos(
+    bet: str, honmei: list[int], ana_pool: list[int], level: str
+) -> tuple[list[tuple], dict]:
+    """メイン: 本命2頭を「マルチ軸」にした統合フォーメーション。
+
+    本命2頭のどちらか1頭でも上位に来れば的中しうる広いカバー。相手は対抗
+    (本命3位以降)＋穴で、荒れ度で本数を可変(_WIDTH)。これ一本で
+    順当(本命3)・中間(本命2+穴1)・やや波乱(本命1+穴2)を連続カバーする。
+
+    Returns: (combos, meta)。meta={axis, others, universe} を表示用に返す。
     """
-    p = pool
+    if len(honmei) < 1:
+        return [], {}
+    axis = honmei[:2]  # 本命2頭(マルチ軸)。1頭しか無ければ1頭軸。
+    n_taikou, n_ana = _WIDTH.get(level, (2, 2))
+    others = _uniq(honmei[2 : 2 + n_taikou] + ana_pool[:n_ana])
+    universe = _uniq(axis + others)
+    axset = set(axis)
+    meta = {"axis": axis, "others": others, "universe": universe}
+
+    def ok(c):  # 軸(本命2頭)のどれかを含む組だけ採用
+        return any(p in axset for p in c)
+
+    if bet == "trio" and len(universe) >= 3:
+        return _uniq([tuple(sorted(c)) for c in combinations(universe, 3) if ok(c)]), meta
+    if bet == "trifecta" and len(universe) >= 3:
+        res = []
+        for c in combinations(universe, 3):
+            if ok(c):
+                res += list(permutations(c))
+        return _uniq(res), meta
+    if bet in ("wide", "umaren") and len(universe) >= 2:
+        return _uniq([tuple(sorted(c)) for c in combinations(universe, 2) if ok(c)]), meta
+    if bet == "umatan" and len(universe) >= 2:
+        res = []
+        for c in combinations(universe, 2):
+            if ok(c):
+                res += [c, (c[1], c[0])]
+        return _uniq(res), meta
+    if bet in ("tansho", "fukusho"):
+        return [(a,) for a in axis], meta
+    return [], meta
+
+
+def _insurance_combos(bet: str, ana_pool: list[int]) -> list[tuple]:
+    """保険: 穴3頭だけの大波乱(本命総崩れ)カバー。荒れ度highのときに薄く張る。"""
+    p = ana_pool
     if len(p) < 1:
         return []
+    if bet == "trio" and len(p) >= 3:
+        return _uniq([tuple(sorted(c)) for c in combinations(p[:3], 3)])
+    if bet == "trifecta" and len(p) >= 3:
+        res = []
+        for c in combinations(p[:3], 3):
+            res += list(permutations(c))
+        return _uniq(res)
+    if bet in ("wide", "umaren") and len(p) >= 2:
+        return _uniq([tuple(sorted(c)) for c in combinations(p[:3], 2)])
+    if bet == "umatan" and len(p) >= 2:
+        res = []
+        for c in combinations(p[:3], 2):
+            res += [c, (c[1], c[0])]
+        return _uniq(res)
     if bet in ("tansho", "fukusho"):
         return [(p[0],)]
-    if bet == "wide":
-        return _uniq([tuple(sorted(c)) for c in combinations(p[:4], 2)])
-    if bet == "umaren":
-        return _uniq([tuple(sorted(c)) for c in combinations(p[:4], 2)])
-    if bet == "umatan":  # 先頭軸の1・2着マルチ
-        return _uniq([(p[0], b) for b in p[1:4]] + [(a, p[0]) for a in p[1:4]])
-    if bet == "trio":
-        return _uniq([tuple(sorted((p[0], *c))) for c in combinations(p[1:6], 2)])
-    if bet == "trifecta":  # 先頭1頭マルチ
-        res = []
-        for c in combinations(p[1:6], 2):
-            res += list(permutations((p[0], *c)))
-        return _uniq(res)
-    return []
-
-
-def _mixed_combos(bet: str, honmei: list[int], ana_pool: list[int]) -> list[tuple]:
-    """本命軸 × 穴 の混在買い目。本命2＋穴1 / 本命1＋穴2 の「中間決着」を拾う。
-
-    純粋な本命サイド(本命3頭)と純粋な穴サイド(穴3頭)の間で取りこぼしていた、
-    「本命が2頭来て3頭目に人気薄が突っ込む」決着をカバーするための構成。
-    """
-    h, a = honmei, ana_pool
-    if not h or not a:
-        return []
-    if bet == "trio":
-        # 本命1頭軸 + 相手(本命2〜4位 + 穴上位3頭)から2頭
-        axis = h[0]
-        partners = [p for p in _uniq(h[1:4] + a[:3]) if p != axis]
-        return _uniq([tuple(sorted((axis, x, y))) for x, y in combinations(partners, 2)])
-    if bet == "trifecta":
-        # 本命1頭マルチ(全着順) + 相手(本命2〜3位 + 穴上位3頭)から2頭
-        axis = h[0]
-        partners = [p for p in _uniq(h[1:3] + a[:3]) if p != axis]
-        res = []
-        for x, y in combinations(partners, 2):
-            res += list(permutations((axis, x, y)))
-        return _uniq(res)
-    if bet in ("wide", "umaren"):
-        # 本命上位2頭 × 穴上位3頭 のペア
-        return _uniq([tuple(sorted((hh, aa))) for hh in h[:2] for aa in a[:3] if hh != aa])
-    if bet == "umatan":
-        # 本命1頭 ⇔ 穴上位3頭(1・2着マルチ)
-        hh = h[0]
-        return _uniq([(hh, aa) for aa in a[:3]] + [(aa, hh) for aa in a[:3]])
-    if bet in ("tansho", "fukusho"):
-        return [(a[0],)]  # 単複は混在の意味が薄いので穴の単複
     return []
 
 
@@ -158,34 +171,40 @@ async def suggest_hedge(
     h_ja, a_ja = BET_JA.get(honmei_bet, honmei_bet), BET_JA.get(ana_bet, ana_bet)
     menu: list[dict] = []
 
-    # 本命サイド: 人気上位の組み合わせ
-    h_combos = _leg_combos(honmei_bet, honmei)
+    # メイン: 本命2頭マルチ軸の統合フォーメーション(順当〜やや波乱を連続カバー)
+    h_combos, meta = _spectrum_combos(honmei_bet, honmei, ana_pool, level)
+    main_axis = meta.get("axis") or [honmei[0]]
     if h_combos and honmei_budget >= 100:
         menu.append({
             "bet": honmei_bet, "method": "hedge", "combos": h_combos,
-            "axis": [honmei[0]] if honmei_bet in ("trio", "trifecta", "umatan") else None,
-            "horses": honmei,
-            "rationale": f"本命サイド: 人気上位馬の{h_ja}(順当決着を回収)",
+            "axis": None if honmei_bet in ("tansho", "fukusho") else main_axis,
+            "horses": meta.get("universe") or honmei,
+            "rationale": (
+                f"メイン: 本命2頭マルチ軸の{h_ja}フォーメーション"
+                "(本命のどちらか1頭絡みで順当〜やや波乱を広くカバー)"
+            ),
             "weight": 2, "budget": honmei_budget,
         })
 
-    # 穴サイド: 本命軸 × 穴 の混在フォーメーション(本命2＋穴1の中間決着を拾う)
-    a_combos = _mixed_combos(ana_bet, honmei, ana_pool)
-    coverage = (
-        f"人気で決着→本命{h_ja} / 本命+人気薄の中間決着→本命軸×穴{a_ja}、で相互カバー。"
-    )
-    a_axis = [honmei[0]] if ana_bet in ("trio", "trifecta", "umatan") else None
-    if a_combos and ana_budget >= 100:
+    # 保険: 穴3頭の大波乱(本命総崩れ)カバー。荒れ度highのときだけ張る。
+    a_combos = _insurance_combos(ana_bet, ana_pool) if level == "high" else []
+    if a_combos and ana_budget >= 100 and menu:
         menu.append({
             "bet": ana_bet, "method": "hedge", "combos": a_combos,
-            "axis": a_axis,
-            "horses": _uniq(honmei[:2] + ana_pool[:3]),
-            "rationale": f"穴サイド: 本命軸×穴の{a_ja}(本命2+穴1の中間決着を拾う)",
+            "axis": [ana_pool[0]] if ana_bet in ("trio", "trifecta", "umatan") else None,
+            "horses": ana_pool[:3],
+            "rationale": f"保険: 穴{a_ja}(本命総崩れの大波乱に備える)",
             "weight": 1, "budget": ana_budget,
         })
+        coverage = (
+            f"本命2頭軸の{h_ja}で順当〜やや波乱を広くカバー＋穴{a_ja}で大波乱に保険。"
+        )
     elif menu:
-        coverage = f"穴馬が不足のため、本命の{h_ja}のみ。"
-        menu[0]["budget"] = budget  # 全額を本命サイドへ
+        menu[0]["budget"] = budget  # 保険なし → 全額メインへ
+        coverage = (
+            f"本命2頭軸の{h_ja}フォーメーションで順当〜やや波乱を広くカバー"
+            + ("（荒れ度highなら穴保険も追加）。" if level != "high" else "。")
+        )
 
     sleeper_posts = ana_pool
 

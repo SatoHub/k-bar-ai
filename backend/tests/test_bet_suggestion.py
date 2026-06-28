@@ -105,22 +105,26 @@ def test_low_budget_drops_unaffordable_bets():
     assert len(res["suggestions"]) >= 1
 
 
-def test_hedge_mixed_covers_honmei2_plus_ana1():
-    """穴サイドの混在フォーメーションが「本命2＋穴1」の中間決着を拾えること。
+def test_hedge_spectrum_covers_outcome_spectrum():
+    """統合フォーメーション(本命2頭マルチ軸)が順当〜やや波乱を連続カバーすること。
 
-    回帰: 旧実装は穴サイドが穴馬3頭のみで、本命2頭＋人気薄1頭の決着を
-    1点も買えず取りこぼしていた(福島11Rラジオ NIKKEI賞で実損)。
+    回帰: 旧実装は本命/穴を別々の馬券にして「本命2+穴1」を取りこぼし
+    (福島11RラジオNIKKEI賞で実損)。さらに軸1頭依存で本命1頭が飛ぶと全滅した。
+    新実装は本命2頭のどちらか1頭絡みの組をすべて拾う。
     """
-    from app.services.hedge_service import _leg_combos, _mixed_combos
+    from app.services.hedge_service import _spectrum_combos
 
-    honmei = [5, 6, 12, 13, 14]   # AI上位5頭の馬番
-    ana_pool = [1, 3, 8, 9, 2]    # 人気薄プール(8=実2着の人気薄)
+    honmei = [5, 6, 12, 13, 14]   # AI上位5頭(5=リッツ実3着, 13=サノノ実1着)
+    ana_pool = [1, 3, 8, 9, 2]    # 人気薄プール(8=ディール実2着)
+
     win = tuple(sorted((13, 8, 5)))  # 本命2(13,5)+穴1(8)の的中三連複
+    combos, meta = _spectrum_combos("trio", honmei, ana_pool, "high")
 
-    old = _leg_combos("trio", ana_pool)       # 旧: 穴馬同士のみ
-    mixed = _mixed_combos("trio", honmei, ana_pool)  # 新: 本命軸×穴
-
-    assert win not in old           # 旧ロジックでは拾えない(取りこぼし再現)
-    assert win in mixed             # 新ロジックでは買い目に含まれる
-    # 軸は本命1番手に固定され、全買い目に含まれる
-    assert all(honmei[0] in c for c in mixed)
+    assert win in combos                       # 中間決着を拾える
+    assert meta["axis"] == [5, 6]              # 本命2頭がマルチ軸
+    # 単一軸依存の解消: 本命2頭のどちらか1頭を含む組だけが対象
+    assert all(5 in c or 6 in c for c in combos)
+    # 軸2頭が両方飛んでも…という大波乱は保険(穴box)側でカバー
+    from app.services.hedge_service import _insurance_combos
+    ins = _insurance_combos("trio", ana_pool)
+    assert tuple(sorted((1, 3, 8))) in ins     # 穴3頭の大波乱
