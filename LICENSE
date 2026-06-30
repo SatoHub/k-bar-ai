@@ -1,0 +1,56 @@
+K-Bar AI — 閲覧限定ライセンス / View-Only License
+Copyright (c) 2026 SatoHub (佐藤大己). All rights reserved. / 全権利留保。
+
+--------------------------------------------------------------------------
+日本語
+--------------------------------------------------------------------------
+このリポジトリに含まれるソースコードおよび関連ファイル（以下「本ソフトウェア」）
+は、作者の開発スキルを示すポートフォリオ、ならびに技術評価・学習参照を目的として
+公開されています。
+
+許可されること:
+  - 本リポジトリ上での閲覧。
+  - 個人的な学習・技術評価のための参照。
+
+作者の書面による事前の許諾がない限り、許可されないこと:
+  - 複製、改変、二次的著作物の作成。
+  - 再配布・再公開（配布物としての利用。GitHub のフォーク機能の通常動作を除く）。
+  - 自身のサービス・製品への組み込み、その他の商用利用。
+
+GitHub 上でのフォークは GitHub の利用規約に基づく通常機能としてのみ許容され、
+上記を超える利用（自前デプロイ、改変利用、再配布、商用利用等）は許可しません。
+
+本ソフトウェアは「現状有姿」で提供され、明示黙示を問わずいかなる保証もありません。
+本ソフトウェアの使用に起因する一切の損害について作者は責任を負いません。
+本ソフトウェアは競馬という公営競技を題材としますが、的中・利益を保証するもの
+ではありません。
+
+利用許諾の相談は、本リポジトリの所有者までご連絡ください。
+
+--------------------------------------------------------------------------
+English
+--------------------------------------------------------------------------
+The source code and related files in this repository (the "Software") are
+published as a portfolio of the author's work and for the purposes of
+technical evaluation and learning reference only.
+
+You MAY:
+  - View the Software within this repository.
+  - Read it for personal study and technical evaluation.
+
+You MAY NOT, without the author's prior written permission:
+  - Copy, modify, or create derivative works.
+  - Redistribute or republish it (other than the normal operation of
+    GitHub's fork feature).
+  - Incorporate it into your own service/product, or otherwise use it
+    commercially.
+
+Forking on GitHub is permitted only as part of GitHub's normal platform
+functionality; any use beyond viewing/evaluation (self-hosting, modified
+use, redistribution, commercial use, etc.) is not granted.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. THE AUTHOR SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+For licensing inquiries, please contact the owner of this repository.

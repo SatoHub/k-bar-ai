@@ -33,6 +33,18 @@ K-Bar AI は、競馬の出馬表・オッズ・過去成績データを自動�
 
 ---
 
+## 🧩 技術的ハイライト
+
+> 個人開発・非商用プロジェクトですが、設計から本番運用までを一人で通した実装です。
+
+- **フルスタックを単独で設計・実装・運用** — FastAPI(非同期 SQLAlchemy) + Next.js 15 / React 19 を一貫して構築。
+- **機械学習の内製** — LightGBM の学習〜推論〜**SHAPによる日本語の根拠説明**まで自作。さらに「市場(オッズ)を超えられるか」を 5,000 レース超で厳密にバックテストし、**精度の天井が損失関数ではなく特徴量の情報量にある**ことを定量的に確認（`docs/` に検証記録）。
+- **複数データソースの統合** — netkeiba / JRA公式の Playwright スクレイピングと **JRA-VAN(JV-Link)** を、決定的IDマッピングで突合する自前のデータ基盤。
+- **本番運用と CI/CD** — Docker Compose + nginx(Basic認証) + VPS。`master` push で **GitHub Actions が自動デプロイ**（pull後の SHA 一致検証でサイレント失敗を検知する堅牢化）。
+- **E2Eによる本番監視** — Playwright で本番のデータ/UIをヘルスチェックし、既知バグの再発を自動検知。
+
+---
+
 ## ✨ 主な機能
 
 ### 🎯 予想・根拠
@@ -185,6 +197,12 @@ cd ../frontend && npm install && npm run dev
 
 ---
 
+## 📄 ライセンス
+
+本リポジトリは**ポートフォリオ（技術評価・学習参照）目的で公開**しています。ソースコードの**閲覧は自由**ですが、複製・改変・再配布・商用利用は作者の事前許諾が必要です（**全権利留保**）。詳細は [`LICENSE`](LICENSE) を参照してください。
+
+---
+
 <div align="center">
-<sub>Personal project — built for learning, not for profit. 🐎</sub>
+<sub>Personal portfolio project — built for learning, not for profit. 🐎</sub>
 </div>
