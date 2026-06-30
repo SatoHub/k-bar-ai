@@ -2,7 +2,7 @@
  * 本番環境ヘルスチェック — K-Bar AI
  *
  * 既知バグ（docs/20260228-bug-registry.md）の再発検知 + UI表示検証 + シミュレーション検証
- * 対象: 本番VPS（133.117.72.213）
+ * 対象: HEALTHCHECK_URL で指定した本番環境（frontend/.env.local 参照）
  *
  * 実行: npx playwright test e2e/production-health-check.spec.ts --project=PC --reporter=list
  */

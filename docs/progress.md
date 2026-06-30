@@ -47,7 +47,7 @@
   5585レースで厳密検証したが**全て改善ゼロ**(モデルはオッズ駆動＝市場ランキングを再現＝同情報では超えられない)
 
 ### 🟢 次回やったほうがいいこと（優先度順）
-1. 🔴 **PATを2つRevoke（あなたの手作業・最優先）**: ①一時PAT`ghp_9kXk...`(チャット露出) ②旧PAT`ghp_a2SL...`。
+1. 🔴 **PATを2つRevoke（あなたの手作業・最優先）**: ①一時PAT（チャット露出分） ②旧PAT。
    https://github.com/settings/tokens から削除
 2. 🟡 **結果通知が今後も成功し続けるか確認**(修正済だが翌日20時JSTの自動実行を1〜2回見届ける)
 3. 🟡 **AI回収率を月次LINEレポートにも載せる**(今はAI成績ページのみ)/単勝◎○等の戦略バリエーション追加
@@ -87,7 +87,7 @@
     O1確定オッズ取得自体は本体期間99%機能。**単独`--spec O1`は契約上不可(JVOpen -111)**。
     ただし**RACE再取得で確定オッズは回復可能**と実証(5/30が0→24/24)。本体5/9〜6/7のRACE再取得を実行中
     (現状156→順次回復)。完了後 populate_confirmed_jravan.sql 再実行→再sync で本番カバレッジUP
-- ⚠️ **本番APIはBasic認証**(`-u admin:kbar2026ai`)。疎通確認時は付与すること
+- ⚠️ **本番APIはBasic認証**(`-u admin:$KBAR_API_PASS`／資格情報は.env.local管理)。疎通確認時は付与すること
 - ⚠️ **uvicorn --reloadは重い**(scheduler起動)。プロセス二重化・孤立ワーカーに注意(継承ソケット)。
   ローカルは `uv run uvicorn app.main:app --port 8000`(reloadなし)推奨
 
@@ -121,9 +121,9 @@
      （不一致なら`exit 1`）。`envs`で`EXPECTED_SHA`をリモート伝搬。
      ⚠️`script_stop`は`appleboy/ssh-action@v1`に存在しない入力（警告が出るため削除済み）。
      失敗検知はスクリプト内`set -e`が担う。デプロイ2回とも成功・SHA検証通過を確認
-   - ⏳ **旧PAT `ghp_a2SL...` のRevokeはユーザー手作業待ち**（classic PATはAPI/CLI削除不可）。
+   - ⏳ **旧PATのRevokeはユーザー手作業待ち**（classic PATはAPI/CLI削除不可）。
      + 2026-06-13のpush時、workflowファイル変更に`workflow`スコープが必要で一時PATを使用
-       （`ghp_9kXk...`＝チャット露出のため**要Revoke**）。gh auth refreshはkeyring更新が
+       （チャット露出のため**要Revoke**）。gh auth refreshはkeyring更新が
        効かず`workflow`付与に失敗→PATをhttp.extraHeader単発で渡しpush（ディスク非保存）
 6. 🟡 (任意) 血統カバレッジ向上のUM全馬セットアップ / モデル再学習用の過去JV-Data一括取得
 

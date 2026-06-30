@@ -16,6 +16,9 @@ data/
 
 # Environment
 .env
+.env.local
+.env.*.local
+*.env.local
 
 # IDE
 .vscode/
@@ -32,6 +35,9 @@ Thumbs.db
 coverage/
 htmlcov/
 .coverage
+
+# Logs
+*.log
 
 # ML models (keep .joblib tracked for deployment)
 backend/models/*.tmp

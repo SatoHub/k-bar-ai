@@ -9,14 +9,18 @@ import asyncio
 import base64
 import datetime
 import json
+import os
 import sys
 import urllib.request
 
 from app.scraper.netkeiba import NetkeibaScraper
 from app.services.sleeper import compute_sleeper
 
-BASE = "http://133.117.72.213/api/v1"
-AUTH = base64.b64encode(b"admin:kbar2026ai").decode()
+# Configure via env: KBAR_API_BASE, KBAR_API_USER, KBAR_API_PASS
+BASE = os.environ.get("KBAR_API_BASE", "http://localhost:8000/api/v1")
+_USER = os.environ.get("KBAR_API_USER", "")
+_PASS = os.environ.get("KBAR_API_PASS", "")
+AUTH = base64.b64encode(f"{_USER}:{_PASS}".encode()).decode()
 RID = sys.argv[1] if len(sys.argv) > 1 else "202605030611"
 MIN_FAV = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 

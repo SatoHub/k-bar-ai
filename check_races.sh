@@ -1,7 +1,9 @@
 #!/bin/bash
 # Check all 36 races for null/missing post_position, bracket_number, jockey
 
-API_BASE="http://133.117.72.213/api/v1"
+# Configure via env: KBAR_API_BASE, KBAR_API_USER, KBAR_API_PASS
+API_BASE="${KBAR_API_BASE:-http://localhost:8000/api/v1}"
+API_AUTH="${KBAR_API_USER:-}:${KBAR_API_PASS:-}"
 OUTDIR="C:/Users/unoen/projects/k-bar-ai/race_check_results"
 PYTHON="/c/Users/unoen/AppData/Local/Programs/Python/Python312/python.exe"
 mkdir -p "$OUTDIR"
@@ -25,7 +27,7 @@ echo "Fetching all 36 races..."
 
 # Step 1: Download all race JSONs
 for RACE_ID in "${RACE_IDS[@]}"; do
-  curl -s -u admin:kbar2026ai "${API_BASE}/races/${RACE_ID}" -o "$OUTDIR/${RACE_ID}.json"
+  curl -s -u "$API_AUTH" "${API_BASE}/races/${RACE_ID}" -o "$OUTDIR/${RACE_ID}.json"
 done
 
 echo "All races downloaded. Analyzing..."

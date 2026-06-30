@@ -17,8 +17,9 @@
 # 前提:    ローカルで各テーブルが populate 済み（populate_*.sql 実行後）
 set -euo pipefail
 
-VPS_HOST="root@133.117.72.213"
-VPS_KEY="$HOME/.ssh/key-2026-02-21-22-04.pem"
+# Configure via env: VPS_HOST (user@host) and VPS_KEY (path to SSH private key)
+VPS_HOST="${VPS_HOST:?set VPS_HOST=user@host}"
+VPS_KEY="${VPS_KEY:?set VPS_KEY=/path/to/ssh_key}"
 LOCAL_CT="kbar-postgres"
 TABLES=(horse_pedigree confirmed_win_odds confirmed_payouts)
 
