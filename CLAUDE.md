@@ -12,7 +12,8 @@ docker compose -f docker/docker-compose.yml --env-file .env up -d
 cd backend && uv run alembic upgrade head
 
 # 3. バックエンドAPI起動 (バックグラウンド)
-cd backend && uv run uvicorn app.main:app --reload --port 8000 &
+# ⚠️ --reload は使わない（scheduler 起動が重く、孤立ワーカーがポート8000を掴む事故が起きる）
+cd backend && uv run uvicorn app.main:app --port 8000 &
 
 # 4. フロントエンド起動 (バックグラウンド)
 cd frontend && npm run dev &
@@ -74,19 +75,30 @@ cd frontend && npx playwright test e2e/production-health-check.spec.ts --project
 | 編集対象 | 自動実行される内容 |
 |---|---|
 | `backend/{app,scripts,tests}/**.py` | `ruff format` → `ruff check --fix` → 対応する `tests/test_<名前>.py` |
-| `frontend/{src,e2e}/**.{ts,tsx}` | `npx tsc --noEmit`（約8秒） |
+| `frontend/{src,e2e}/**.{ts,tsx}` | `npx tsc --noEmit --incremental false`（約4秒） |
+
+`--incremental false` は必須。付けないと追跡対象の `tsconfig.tsbuildinfo` を毎回書き換え、
+変更と無関係な差分が残り続ける。
 
 - 成功時は無言。失敗時だけ結果が Claude に渡される。
 - **重い検証（全テスト・build・E2E）は hook 化していない。** タスク完了時に上表のコマンドで自分で実行する。
 
 ## ユーザーの承認が必要な操作（hook が機械的にブロック）
 
-`.claude/hooks/guard.json` に定義。承認された場合のみコマンド末尾に ` #APPROVED-BY-USER` を付けて再実行する。
-**ユーザーが承認していないのにマーカーを付けることは禁止。**
+`.claude/hooks/guard.json` に定義。**Bash / PowerShell の両ツール**に適用される。
+承認された場合のみコマンド末尾に ` #APPROVED-BY-USER` を付けて再実行する。
+**ユーザーが承認していないのにマーカーを付けること、別ツールに切り替えて回避することは禁止。**
 
-git 破壊的操作 / force push / ssh・scp・rsync / 外部への更新系 curl /
+git 破壊的操作（`git -C` 付きも）/ force push / 履歴書き換え / ssh・scp・rsync /
+外部への更新系 curl・Invoke-RestMethod（`-X` 無しの `--data` 等も）/
 `docker-compose.prod.yml` 操作 / VPS へのDB同期 / 認証情報変更 / DB破壊操作 /
-依存パッケージ追加 / 広範囲の `rm -rf`
+依存パッケージ追加 / 広範囲の再帰削除（`rm -rf ./*` や `Remove-Item -Recurse` も）
+
+ルールを変えたら回帰テストを回すこと（ブロック漏れと誤検知の両方を検査する）:
+
+```bash
+node .claude/hooks/guard.test.mjs
+```
 
 ⚠️ **master への push は GitHub Actions 経由で本番VPSへ自動デプロイされる。**
 push はユーザーが明示的に指示した時だけ行うこと。

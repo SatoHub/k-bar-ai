@@ -79,7 +79,7 @@ Claude Code を「コードを書く道具」から「調査→計画→実装�
 そのスタックに合わせた CLAUDE.md・hooks を生成する。技術スタックはスキルにハードコードしていない。
 
 同梱物:
-- `templates/post-edit.mjs` / `guard-bash.mjs` — 設定ファイル駆動の汎用 hook
+- `templates/post-edit.mjs` / `guard-command.mjs` / `guard.test.mjs` — 設定ファイル駆動の汎用 hook と回帰テスト雛形
 - `reference/hooks-schema.md` — 公式ドキュメントで**確認済み**の hooks/agents/skills 仕様
 
 ---
@@ -91,7 +91,7 @@ Claude Code を「コードを書く道具」から「調査→計画→実装�
 | 編集対象 | 自動実行 | 実測 |
 |---|---|---|
 | `backend/{app,scripts,tests}/**.py` | `ruff format` → `ruff check --fix` → 対応する `tests/test_<名前>.py` | 3.5秒（DB不要テスト） |
-| `frontend/{src,e2e}/**.{ts,tsx}` | `npx tsc --noEmit` | 2〜8秒 |
+| `frontend/{src,e2e}/**.{ts,tsx}` | `npx tsc --noEmit --incremental false` | 約4秒 |
 
 - 成功時は**無言**。失敗時だけ結果が Claude に渡る。
 - 関連テストは**実在する時だけ**走る（`app/api/v1/health.py` → `tests/test_health.py` を自動発見）。
@@ -99,11 +99,16 @@ Claude Code を「コードを書く道具」から「調査→計画→実装�
 
 ### 3.2 危険コマンドの機械的ブロック（`.claude/hooks/guard.json`）
 
-ブロック対象: git破壊的操作 / force push / ssh・scp・rsync / 外部への更新系curl /
-`docker-compose.prod.yml` / VPS へのDB同期 / 認証情報変更 / DB破壊 / **依存パッケージ追加** / 広範な `rm -rf`
+**Bash / PowerShell の両ツール**に適用される。
 
-通す: `git status` / `git push`(通常) / GET curl / ローカル docker / `alembic upgrade` /
-引数なし `npm install` / `npx playwright install` — **25ケースで誤検知ゼロを実測**
+ブロック対象: git破壊的操作（`git -C` 付きも）/ force push / 履歴書き換え / ssh・scp・rsync /
+外部への更新系 curl・Invoke-RestMethod（`-X` 無しの `--data` 等も）/ 本番 compose ファイル操作 /
+VPS へのDB同期 / 認証情報変更 / DB破壊 / **依存パッケージ追加** /
+広範な再帰削除（`rm -rf ./*` や `Remove-Item -Recurse` も）
+
+通す: `git status` / `git -C <path> status` / `git push`(通常) / GET curl / localhost への POST /
+ローカル docker / `alembic upgrade` / 引数なし `npm install` / `rm -rf node_modules` —
+**`guard.test.mjs` の53ケースで pass**（ブロック漏れ・誤検知とも0）
 
 承認された時だけコマンド末尾に ` #APPROVED-BY-USER` を付けて再実行する。
 
@@ -157,6 +162,63 @@ Claude Code を「コードを書く道具」から「調査→計画→実装�
 
 - 承認マーカーは**強制力ではない**（3.2 参照）
 - 独立レビューは**トークンを消費する**。Small では起動しない設計で緩和済み
-- Hook は編集のたびに走る。frontend の tsc は最大8秒
+- Hook は編集のたびに走る。frontend の tsc は約4秒、backend の関連テストは3〜12秒
 - `tests/test_health.py` は **PostgreSQL 必須**。Docker 停止中は3件失敗する（環境要因）
-- Subagents は再起動なしで反映されたが、Hooks（settings.json）の即時反映は未確認
+- Subagents・Hooks とも**再起動なしで反映された**（guard が同一セッション内で実際にブロックした）
+- **guard はコマンド文字列を正規表現で見るだけ**なので、危険コマンドについて*書いている*だけの
+  シェル実行（ドキュメント生成など）も誤検知する。ファイル編集は Bash heredoc ではなく
+  Edit / Write ツールを使えば起きない
+
+---
+
+## 7. クロスモデルレビュー（codex）の導入 — 2026-08-22 追記
+
+### なぜ追加したか
+
+`code-reviewer` サブエージェントは**別コンテキストだが同じモデル**。文脈の汚染は防げるが、
+**同じモデルは同じ勘違いをする**（学習データも推論の癖も共通）。
+`codex`（OpenAI）は別モデルなので盲点が構造的にズレる。**代替ではなく追加**として価値がある。
+
+環境: `codex-cli 0.149.0` を `npm install -g @openai/codex`、ChatGPT アカウントでログイン済み。
+
+### 必須の起動オプション（省略すると静かに誤った結果を返す）
+
+```bash
+codex review --uncommitted --config model_reasoning_effort=high \
+  -c sandbox_mode='"danger-full-access"' \
+  -c 'plugins."github@openai-curated".enabled=false'
+```
+
+1. **`sandbox_mode`** — Windows では codex のサンドボックスが機能せず、powershell / cmd /
+   git bash の**すべての起動が `rejected: blocked by policy`** で失敗する。ローカル git を読めない。
+   代償として codex は**サンドボックスなしでコマンドを実行できる**。レビュー用途に限定すること。
+2. **`plugins."github@openai-curated".enabled=false`** — ローカルが読めないと codex は
+   GitHub MCP にフォールバックし、**未push のローカル HEAD ではなくリモートの別コミットを
+   レビューして「問題なし」と誤った合格を返した**（実際に発生）。
+
+所要時間は実測 **約9分**。
+
+### 初回レビューの成果 — 自分のセットアップから7件検出
+
+| 重要度 | 指摘 | 判定 |
+|---|---|---|
+| P1 | guard の matcher が `Bash` のみ。**PowerShell ツールから破壊的コマンドが素通り** | 妥当 → 両対応に修正 |
+| P1 | `git -C <path> reset --hard` が正規表現に一致しない（このリポジトリは `git -C` を多用） | 妥当 → グローバルオプション許容 |
+| P1 | `rm -rf ./*` が一致しない（`.` 始まりのため） | 妥当 → 相対パス・ワイルドカードを追加 |
+| P1 | `curl --data` / `--request POST` は `-X` 無しで POST するのに一致しない | 妥当 → 長形式と暗黙POSTを追加 |
+| P2 | `tsc --noEmit` が追跡対象の `tsconfig.tsbuildinfo` を毎回書き換える | 妥当 → `--incremental false` |
+| P2 | CLAUDE.md の起動手順が `--reload` を使っており、同じファイルの禁止ルールと矛盾 | 妥当 → 起動手順を修正 |
+| P2 | `additionalContext` は `hookSpecificOutput` に入れるべき | **誤り** → 公式仕様でトップレベルが正しいと確認 |
+
+**教訓**: レビュー結果を鵜呑みにしないこと。7件中1件は現行仕様と異なる指摘だった。
+一方で、自分で書いた設定の穴（特に「もう一方のシェルから素通り」）は**自分では見つけられなかった**。
+
+### 再発防止
+
+`.claude/hooks/guard.test.mjs` を常設。ブロックすべき例と**通すべき例**の両方を含む53ケース。
+
+```bash
+node .claude/hooks/guard.test.mjs
+```
+
+ルールを変えたら必ず実行する（ブロック漏れだけでなく誤検知も検査する）。

@@ -1,16 +1,21 @@
 {
-  "_comment": "guard-bash.mjs の設定。ユーザーの明示承認なしに実行させたくない Bash コマンドをブロックする。承認された場合のみコマンド末尾に承認マーカーを付けて再実行する。",
+  "_comment": "guard-command.mjs の設定。Bash / PowerShell ツール両方に適用される。ユーザーの明示承認なしに実行させたくないコマンドをブロックする。承認された場合のみコマンド末尾に承認マーカーを付けて再実行する。",
   "approvalMarker": "#APPROVED-BY-USER",
   "rules": [
     {
       "name": "git破壊的操作",
-      "pattern": "git\\s+(reset\\s+--hard|clean\\s+-[a-zA-Z]*f|checkout\\s+--\\s+\\.)",
+      "pattern": "git(\\s+(-[cC]\\s+\\S+|--\\S+(=\\S+)?|-[a-zA-Z]\\s+\\S+))*\\s+(reset\\s+(--hard|--merge\\s+)|clean\\s+-[a-zA-Z]*[fF]|checkout\\s+--\\s|restore\\s+(\\.|--\\s))",
       "reason": "ユーザーの未コミット変更を復元不能に消す可能性があります。Claude が作っていない変更が存在する前提で動いてください。"
     },
     {
       "name": "force push",
-      "pattern": "git\\s+push\\b[^|]*(--force|--force-with-lease|\\s-f\\b)",
+      "pattern": "git(\\s+(-[cC]\\s+\\S+|--\\S+(=\\S+)?|-[a-zA-Z]\\s+\\S+))*\\s+push\\b[^|]*(--force|--force-with-lease|\\s-f\\b)",
       "reason": "リモートの履歴を破壊します。master への push は本番へ自動デプロイされます。"
+    },
+    {
+      "name": "履歴の書き換え",
+      "pattern": "git(\\s+(-[cC]\\s+\\S+|--\\S+(=\\S+)?|-[a-zA-Z]\\s+\\S+))*\\s+(filter-branch|filter-repo|reflog\\s+delete|update-ref\\s+-d)",
+      "reason": "コミット履歴を破壊的に書き換えます。"
     },
     {
       "name": "リモートホストへの接続・転送",
@@ -19,8 +24,13 @@
     },
     {
       "name": "外部への書き込みリクエスト",
-      "pattern": "curl(?=[\\s\\S]*-X\\s*[\"']?(POST|PUT|PATCH|DELETE))(?=[\\s\\S]*https?://)(?![\\s\\S]*https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0))",
+      "pattern": "curl(?=[\\s\\S]*(-X\\s*[\"']?(POST|PUT|PATCH|DELETE)|--request\\s+[\"']?(POST|PUT|PATCH|DELETE)|\\s(-d|--data|--data-raw|--data-binary|--data-urlencode|--json|-F|--form|-T|--upload-file)\\b))(?=[\\s\\S]*https?://)(?![\\s\\S]*https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0))",
       "reason": "外部(本番API等)に対する更新系リクエストです。予想の再実行・スケジューラ起動などが該当します。GET による確認と localhost への操作は制限していません。"
+    },
+    {
+      "name": "PowerShellでの外部書き込みリクエスト",
+      "pattern": "(Invoke-RestMethod|Invoke-WebRequest|\\birm\\b|\\biwr\\b)(?=[\\s\\S]*-Method\\s+[\"']?(Post|Put|Patch|Delete))(?![\\s\\S]*(localhost|127\\.0\\.0\\.1))",
+      "reason": "外部に対する更新系リクエストです。"
     },
     {
       "name": "本番Docker操作",
@@ -39,7 +49,7 @@
     },
     {
       "name": "DBの破壊的操作",
-      "pattern": "(alembic\\s+downgrade|DROP\\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\\s+)",
+      "pattern": "(alembic\\s+downgrade|DROP\\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\\s+|dropdb\\b)",
       "reason": "データを失う可能性があります。ローカルであっても影響範囲の確認が必要です。"
     },
     {
@@ -48,9 +58,14 @@
       "reason": "依存追加の前に、標準ライブラリ・既存依存で実現できないか、保守状況・セキュリティ・バンドルサイズ・ライセンスを確認する必要があります。引数なしの `npm install`（復元）は制限していません。"
     },
     {
-      "name": "広範囲の削除",
-      "pattern": "rm\\s+-[a-zA-Z]*r[a-zA-Z]*f?[a-zA-Z]*\\s+(/|~|\\$|\\*)",
-      "reason": "ルート・ホーム・ワイルドカード配下を再帰削除しようとしています。"
+      "name": "広範囲の削除(bash)",
+      "pattern": "rm\\s+(-[a-zA-Z]*\\s+)*-?[a-zA-Z]*r[a-zA-Z]*\\s+[^|;&]*(\\s|=)?(/(\\s|$|\\*)|~|\\$[A-Za-z_{]|\\*|\\.\\.?/?\\s*\\*|\\.\\.(/|\\s|$))",
+      "reason": "ルート・ホーム・カレント配下などを再帰削除しようとしています。対象を明示した削除に絞ってください。"
+    },
+    {
+      "name": "広範囲の削除(PowerShell)",
+      "pattern": "(Remove-Item|\\bri\\b|\\bdel\\b|\\berase\\b|\\brd\\b|rmdir)(?=[\\s\\S]*(-Recurse|-r\\b|/s\\b))(?=[\\s\\S]*(\\*|\\$|\\\\\\\\|[A-Za-z]:\\\\(\\s|$|\\*)|\\.\\.))",
+      "reason": "再帰削除でワイルドカード・変数・ドライブ直下・親ディレクトリを対象にしています。"
     }
   ]
 }

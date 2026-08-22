@@ -24,7 +24,8 @@
       "match": "^frontend/(src|e2e)/.*\\.(ts|tsx)$",
       "exclude": "/(node_modules|\\.next)/",
       "cwd": "frontend",
-      "commands": ["npx tsc --noEmit"],
+      "_note": "--incremental false は必須。付けないと追跡対象の tsconfig.tsbuildinfo を毎回書き換え、変更と無関係な差分が残る。",
+      "commands": ["npx tsc --noEmit --incremental false"],
       "timeout": 240
     }
   ]
