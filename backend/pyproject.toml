@@ -34,3 +34,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# 外部clone(jravan/jrvltsql)や仮想環境を収集対象から外す。
+# これが無いと `pytest` が jrvltsql/tests/conftest.py を拾って収集エラーになる。
+testpaths = ["tests"]
+norecursedirs = ["jravan", ".venv", ".venv32", "models", "alembic", "__pycache__"]

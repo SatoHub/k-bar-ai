@@ -6,7 +6,7 @@
  *
  * 実行: npx playwright test e2e/production-health-check.spec.ts --project=PC --reporter=list
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
 // ---------- 定数 ----------
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -30,11 +30,7 @@ interface Entry {
 }
 
 /** 当日の全レースを取得 */
-async function fetchAllRaces(
-  request: ReturnType<Page["request"]["constructor"]> & {
-    get: (url: string) => Promise<any>;
-  },
-): Promise<Race[]> {
+async function fetchAllRaces(request: APIRequestContext): Promise<Race[]> {
   const resp = await request.get(`${API}/races?date=${TODAY}&per_page=100`);
   expect(resp.ok(), `レースAPI応答: ${resp.status()}`).toBeTruthy();
   const data = await resp.json();
