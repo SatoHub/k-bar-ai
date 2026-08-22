@@ -103,6 +103,20 @@ node .claude/hooks/guard.test.mjs
 ⚠️ **master への push は GitHub Actions 経由で本番VPSへ自動デプロイされる。**
 push はユーザーが明示的に指示した時だけ行うこと。
 
+## クロスモデルレビュー（codex）を回す対象
+
+通常のレビューは Claude の `code-reviewer`（1〜2分）。
+**以下に触れる変更だけ**、差分が1行でも `codex review` も回す（約9分・バックグラウンド実行）。
+起動オプションは `~/.claude/CLAUDE.md` §12.10 を参照（`-c` 2つを省くと誤ったコミットをレビューする）。
+
+| カテゴリ | 該当パス |
+|---|---|
+| 本番・デプロイ | `.github/workflows/`、`docker/docker-compose.prod.yml`、`backend/app/scheduler/` |
+| DBスキーマ | `backend/alembic/versions/`、`backend/app/models/` |
+| 金銭に関わる計算 | `backend/app/services/bet_suggestion*.py`、`hedge_service.py`、`backend/app/ml/` |
+| 安全機構 | `.claude/hooks/`、`.claude/settings.json` |
+| 認証・外部公開 | `backend/app/api/` の認証まわり、nginx 設定 |
+
 ## Project Rules
 
 - **機密情報を絶対にコミットしない。** このリポジトリは public。秘匿値は `.env` / `frontend/.env.local`（共に gitignore）へ。
