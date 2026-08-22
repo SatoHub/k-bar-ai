@@ -1,0 +1,31 @@
+{
+  "_comment": "post-edit.mjs の設定。軽量チェックのみ。全テスト・build・E2E はここに入れない（Task完了時に手動/Claude判断で実行）。",
+  "rules": [
+    {
+      "_name": "backend-python",
+      "match": "^backend/(app|scripts|tests)/.*\\.py$",
+      "exclude": "/(alembic|__pycache__)/",
+      "cwd": "backend",
+      "commands": [
+        "uv run ruff format {file}",
+        "uv run ruff check --fix {file}"
+      ],
+      "timeout": 120,
+      "relatedTest": {
+        "dir": "tests",
+        "namePattern": "test_{base}",
+        "selfPattern": "^backend/tests/",
+        "command": "uv run pytest {test} -q --no-header --tb=line -x -p no:cacheprovider",
+        "timeout": 240
+      }
+    },
+    {
+      "_name": "frontend-typecheck",
+      "match": "^frontend/(src|e2e)/.*\\.(ts|tsx)$",
+      "exclude": "/(node_modules|\\.next)/",
+      "cwd": "frontend",
+      "commands": ["npx tsc --noEmit"],
+      "timeout": 240
+    }
+  ]
+}

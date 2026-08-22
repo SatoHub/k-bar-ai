@@ -1,0 +1,56 @@
+{
+  "_comment": "guard-bash.mjs の設定。ユーザーの明示承認なしに実行させたくない Bash コマンドをブロックする。承認された場合のみコマンド末尾に承認マーカーを付けて再実行する。",
+  "approvalMarker": "#APPROVED-BY-USER",
+  "rules": [
+    {
+      "name": "git破壊的操作",
+      "pattern": "git\\s+(reset\\s+--hard|clean\\s+-[a-zA-Z]*f|checkout\\s+--\\s+\\.)",
+      "reason": "ユーザーの未コミット変更を復元不能に消す可能性があります。Claude が作っていない変更が存在する前提で動いてください。"
+    },
+    {
+      "name": "force push",
+      "pattern": "git\\s+push\\b[^|]*(--force|--force-with-lease|\\s-f\\b)",
+      "reason": "リモートの履歴を破壊します。master への push は本番へ自動デプロイされます。"
+    },
+    {
+      "name": "リモートホストへの接続・転送",
+      "pattern": "(^|[;&|]\\s*)(ssh|scp|rsync)\\s",
+      "reason": "本番VPS等リモートマシンへの直接操作です。接続先と実行内容をユーザーに確認してください。"
+    },
+    {
+      "name": "外部への書き込みリクエスト",
+      "pattern": "curl(?=[\\s\\S]*-X\\s*[\"']?(POST|PUT|PATCH|DELETE))(?=[\\s\\S]*https?://)(?![\\s\\S]*https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0))",
+      "reason": "外部(本番API等)に対する更新系リクエストです。予想の再実行・スケジューラ起動などが該当します。GET による確認と localhost への操作は制限していません。"
+    },
+    {
+      "name": "本番Docker操作",
+      "pattern": "docker[\\s-]?compose[^|]*docker-compose\\.prod\\.yml",
+      "reason": "本番コンテナの再構築・停止に相当します。ローカルの docker-compose.yml は制限していません。"
+    },
+    {
+      "name": "本番DBへのデータ同期",
+      "pattern": "sync_jravan_derived_to_vps",
+      "reason": "本番DBのテーブルを truncate + restore します。"
+    },
+    {
+      "name": "認証情報の変更",
+      "pattern": "(htpasswd\\b|gh\\s+secret\\s+set|gh\\s+auth\\s+(login|refresh))",
+      "reason": "認証情報・シークレットを変更します。"
+    },
+    {
+      "name": "DBの破壊的操作",
+      "pattern": "(alembic\\s+downgrade|DROP\\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\\s+)",
+      "reason": "データを失う可能性があります。ローカルであっても影響範囲の確認が必要です。"
+    },
+    {
+      "name": "依存パッケージの追加",
+      "pattern": "((npm|pnpm|yarn)\\s+(i|install|add)\\s+(-{1,2}[a-zA-Z-]+\\s+)*[a-zA-Z@]|uv\\s+add\\s+|uv\\s+pip\\s+install\\s+[a-zA-Z]|(^|[;&|]\\s*)pip3?\\s+install\\s+[a-zA-Z])",
+      "reason": "依存追加の前に、標準ライブラリ・既存依存で実現できないか、保守状況・セキュリティ・バンドルサイズ・ライセンスを確認する必要があります。引数なしの `npm install`（復元）は制限していません。"
+    },
+    {
+      "name": "広範囲の削除",
+      "pattern": "rm\\s+-[a-zA-Z]*r[a-zA-Z]*f?[a-zA-Z]*\\s+(/|~|\\$|\\*)",
+      "reason": "ルート・ホーム・ワイルドカード配下を再帰削除しようとしています。"
+    }
+  ]
+}
