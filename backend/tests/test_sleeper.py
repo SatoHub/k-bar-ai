@@ -9,18 +9,23 @@ RACE_DATE = datetime.date(2026, 6, 21)
 
 def _run(date, surface, finish, fav=5, fs=16, grade=None):
     return {
-        "date": date, "surface": surface, "distance_m": 1800,
-        "finish_position": finish, "field_size": fs, "win_favorite": fav,
-        "grade": grade, "race_name": "X",
+        "date": date,
+        "surface": surface,
+        "distance_m": 1800,
+        "finish_position": finish,
+        "field_size": fs,
+        "win_favorite": fav,
+        "grade": grade,
+        "race_name": "X",
     }
 
 
 def test_surface_switch_sleeper_flagged():
     # 芝の重賞実績馬が前走ダートで大敗→14人気 = ミアネーロ型
     career = [
-        _run("2026/03/08", "ダート", 15, fav=11, fs=16),       # 前走ダート大敗
-        _run("2025/09/07", "芝", 2, fav=3, grade="GII"),       # 芝重賞2着
-        _run("2025/05/19", "芝", 1, fav=1, grade="GIII"),      # 芝重賞勝ち
+        _run("2026/03/08", "ダート", 15, fav=11, fs=16),  # 前走ダート大敗
+        _run("2025/09/07", "芝", 2, fav=3, grade="GII"),  # 芝重賞2着
+        _run("2025/05/19", "芝", 1, fav=1, grade="GIII"),  # 芝重賞勝ち
         _run("2025/03/01", "芝", 4, fav=5),
     ]
     s = compute_sleeper("芝", 14, career, before_date=RACE_DATE)

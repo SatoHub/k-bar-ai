@@ -158,9 +158,7 @@ def build_results_flex(results: list[dict]) -> dict:
             status_icon = ""
             color = "#888888"
 
-        top3_text = " > ".join(
-            h.get("name", "?") for h in res.get("top3", [])[:3]
-        )
+        top3_text = " > ".join(h.get("name", "?") for h in res.get("top3", [])[:3])
 
         # ヘッダ行（レース名＋勝敗アイコン）。
         # ⚠️ LINE Flex は text に空文字を許さない（400 Bad Request になる）。
@@ -367,7 +365,7 @@ def build_interactive_flex(
     This serves as a foundation for Step 5/6 interactive features.
     """
     button_contents: list[dict] = []
-    for action in (actions or []):
+    for action in actions or []:
         button_contents.append(
             {
                 "type": "button",
@@ -539,17 +537,6 @@ def build_monthly_proposal_flex(
 
     Each proposal: {id, proposal_type, description, priority}
     """
-    body_contents: list[dict] = [
-        {
-            "type": "text",
-            "text": f"{month_str} 改善提案",
-            "weight": "bold",
-            "size": "lg",
-            "color": "#333333",
-        },
-        {"type": "separator", "margin": "md"},
-    ]
-
     bubbles: list[dict] = []
 
     for i, proposal in enumerate(proposals[:5]):
@@ -610,7 +597,7 @@ def build_monthly_proposal_flex(
                     "contents": [
                         {
                             "type": "text",
-                            "text": f"K-Bar AI 改善提案",
+                            "text": "K-Bar AI 改善提案",
                             "color": "#ffffff",
                             "size": "sm",
                             "weight": "bold",

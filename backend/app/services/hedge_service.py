@@ -20,8 +20,13 @@ from app.services.sleeper_service import find_sleepers
 logger = logging.getLogger(__name__)
 
 BET_JA = {
-    "tansho": "単勝", "fukusho": "複勝", "umaren": "馬連",
-    "wide": "ワイド", "umatan": "馬単", "trio": "三連複", "trifecta": "三連単",
+    "tansho": "単勝",
+    "fukusho": "複勝",
+    "umaren": "馬連",
+    "wide": "ワイド",
+    "umatan": "馬単",
+    "trio": "三連複",
+    "trifecta": "三連単",
 }
 
 
@@ -57,7 +62,9 @@ def _spectrum_combos(
         return any(p in axset for p in c)
 
     if bet == "trio" and len(universe) >= 3:
-        return _uniq([tuple(sorted(c)) for c in combinations(universe, 3) if ok(c)]), meta
+        return _uniq(
+            [tuple(sorted(c)) for c in combinations(universe, 3) if ok(c)]
+        ), meta
     if bet == "trifecta" and len(universe) >= 3:
         res = []
         for c in combinations(universe, 3):
@@ -65,7 +72,9 @@ def _spectrum_combos(
                 res += list(permutations(c))
         return _uniq(res), meta
     if bet in ("wide", "umaren") and len(universe) >= 2:
-        return _uniq([tuple(sorted(c)) for c in combinations(universe, 2) if ok(c)]), meta
+        return _uniq(
+            [tuple(sorted(c)) for c in combinations(universe, 2) if ok(c)]
+        ), meta
     if bet == "umatan" and len(universe) >= 2:
         res = []
         for c in combinations(universe, 2):
@@ -124,11 +133,13 @@ async def suggest_hedge(
         if e.post_position and e.horse:
             names[e.post_position] = e.horse.name
         if e.post_position and e.win_odds:
-            horses.append({
-                "post": e.post_position,
-                "win_odds": float(e.win_odds),
-                "win_favorite": e.win_favorite,
-            })
+            horses.append(
+                {
+                    "post": e.post_position,
+                    "win_odds": float(e.win_odds),
+                    "win_favorite": e.win_favorite,
+                }
+            )
 
     ranked_pairs = [
         (p["predicted_position"], post_by_horse.get(p["horse_id"]))
@@ -138,16 +149,26 @@ async def suggest_hedge(
     ranked = [post for _, post in sorted(ranked_pairs)]
 
     base = {
-        "race_id": race_id_str, "race_name": race.race_name, "budget": budget,
-        "alloc_mode": "gami_avoid", "upset_level": level,
+        "race_id": race_id_str,
+        "race_name": race.race_name,
+        "budget": budget,
+        "alloc_mode": "gami_avoid",
+        "upset_level": level,
         "names": {str(k): v for k, v in names.items()},
     }
     if not horses or len(ranked) < 4:
-        return {**base, "odds_live": False, "total_allocated": 0, "suggestions": [],
-                "message": "予想またはオッズが不足しています"}
+        return {
+            **base,
+            "odds_live": False,
+            "total_allocated": 0,
+            "suggestions": [],
+            "message": "予想またはオッズが不足しています",
+        }
 
     # 穴馬を検出（応答時間短縮のため頭数を抑制）
-    sleepers_res = await find_sleepers(session, race_id_str, min_fav=min_fav, max_horses=10)
+    sleepers_res = await find_sleepers(
+        session, race_id_str, min_fav=min_fav, max_horses=10
+    )
     sleeper_entries = (sleepers_res or {}).get("entries", [])  # 穴度の高い順
 
     honmei = ranked[:5]  # 本命プール = 予想(人気)上位
@@ -160,9 +181,13 @@ async def suggest_hedge(
         p = e.get("post_position")
         if p and e.get("is_sleeper") and p not in honmei_set and p not in ana_pool:
             ana_pool.append(p)
-    for h in sorted(horses, key=lambda x: (x.get("win_favorite") or 99)):
+    for h in sorted(horses, key=lambda x: x.get("win_favorite") or 99):
         p = h["post"]
-        if (h.get("win_favorite") or 99) >= min_fav and p not in honmei_set and p not in ana_pool:
+        if (
+            (h.get("win_favorite") or 99) >= min_fav
+            and p not in honmei_set
+            and p not in ana_pool
+        ):
             ana_pool.append(p)
     ana_pool = ana_pool[:5]
 
@@ -175,35 +200,46 @@ async def suggest_hedge(
     h_combos, meta = _spectrum_combos(honmei_bet, honmei, ana_pool, level)
     main_axis = meta.get("axis") or [honmei[0]]
     if h_combos and honmei_budget >= 100:
-        menu.append({
-            "bet": honmei_bet, "method": "hedge", "combos": h_combos,
-            "axis": None if honmei_bet in ("tansho", "fukusho") else main_axis,
-            "horses": meta.get("universe") or honmei,
-            "rationale": (
-                f"メイン: 本命2頭マルチ軸の{h_ja}フォーメーション"
-                "(本命のどちらか1頭絡みで順当〜やや波乱を広くカバー)"
-            ),
-            "weight": 2, "budget": honmei_budget,
-        })
+        menu.append(
+            {
+                "bet": honmei_bet,
+                "method": "hedge",
+                "combos": h_combos,
+                "axis": None if honmei_bet in ("tansho", "fukusho") else main_axis,
+                "horses": meta.get("universe") or honmei,
+                "rationale": (
+                    f"メイン: 本命2頭マルチ軸の{h_ja}フォーメーション"
+                    "(本命のどちらか1頭絡みで順当〜やや波乱を広くカバー)"
+                ),
+                "weight": 2,
+                "budget": honmei_budget,
+            }
+        )
 
     # 保険: 穴3頭の大波乱(本命総崩れ)カバー。荒れ度highのときだけ張る。
     a_combos = _insurance_combos(ana_bet, ana_pool) if level == "high" else []
     if a_combos and ana_budget >= 100 and menu:
-        menu.append({
-            "bet": ana_bet, "method": "hedge", "combos": a_combos,
-            "axis": [ana_pool[0]] if ana_bet in ("trio", "trifecta", "umatan") else None,
-            "horses": ana_pool[:3],
-            "rationale": f"保険: 穴{a_ja}(本命総崩れの大波乱に備える)",
-            "weight": 1, "budget": ana_budget,
-        })
+        menu.append(
+            {
+                "bet": ana_bet,
+                "method": "hedge",
+                "combos": a_combos,
+                "axis": [ana_pool[0]]
+                if ana_bet in ("trio", "trifecta", "umatan")
+                else None,
+                "horses": ana_pool[:3],
+                "rationale": f"保険: 穴{a_ja}(本命総崩れの大波乱に備える)",
+                "weight": 1,
+                "budget": ana_budget,
+            }
+        )
         coverage = (
             f"本命2頭軸の{h_ja}で順当〜やや波乱を広くカバー＋穴{a_ja}で大波乱に保険。"
         )
     elif menu:
         menu[0]["budget"] = budget  # 保険なし → 全額メインへ
-        coverage = (
-            f"本命2頭軸の{h_ja}フォーメーションで順当〜やや波乱を広くカバー"
-            + ("（荒れ度highなら穴保険も追加）。" if level != "high" else "。")
+        coverage = f"本命2頭軸の{h_ja}フォーメーションで順当〜やや波乱を広くカバー" + (
+            "（荒れ度highなら穴保険も追加）。" if level != "high" else "。"
         )
 
     sleeper_posts = ana_pool
@@ -212,6 +248,7 @@ async def suggest_hedge(
     odds_lookup: dict[str, dict] = {}
     needed = {m["bet"] for m in menu}
     from app.scraper.netkeiba import NetkeibaScraper
+
     try:
         async with NetkeibaScraper(headless=True) as nk:
             for t in needed:
@@ -219,7 +256,9 @@ async def suggest_hedge(
                     parsed = await nk.scrape_full_odds(race_id_str, ENGINE_TO_NK[t])
                     if parsed and parsed.get("combos"):
                         odds_lookup[t] = {
-                            k: v["odds"] for k, v in parsed["combos"].items() if v.get("odds")
+                            k: v["odds"]
+                            for k, v in parsed["combos"].items()
+                            if v.get("odds")
                         }
                 except Exception as e:  # noqa: BLE001
                     logger.warning("hedge odds fetch failed %s: %s", t, e)
@@ -227,7 +266,10 @@ async def suggest_hedge(
         logger.warning("hedge odds scraper failed: %s", e)
 
     res = suggest(
-        budget, horses, ranked, level,
+        budget,
+        horses,
+        ranked,
+        level,
         odds_lookup=odds_lookup or None,
         alloc_mode="gami_avoid",
         menu_override=menu,

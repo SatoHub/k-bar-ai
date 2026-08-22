@@ -57,7 +57,9 @@ def race_features(odds: np.ndarray, fav: np.ndarray, p_main: np.ndarray) -> dict
     fav1_q = float(q[order[0]])
 
     pq = p_main / p_main.sum() if p_main.sum() > 0 else np.full(n, 1.0 / n)
-    pmain_entropy = float(-(pq * np.log(pq + 1e-12)).sum() / np.log(n)) if n > 1 else 0.0
+    pmain_entropy = (
+        float(-(pq * np.log(pq + 1e-12)).sum() / np.log(n)) if n > 1 else 0.0
+    )
 
     return {
         "fav1_odds": fav1_odds,
@@ -91,7 +93,10 @@ def load() -> dict | None:
 def _level(percentile: float) -> tuple[str, str]:
     """Map distribution percentile to a (level, hint) pair."""
     if percentile >= 0.70:
-        return "high", "波乱含み。本命の厚張りより、軸+人気薄まで広げたフォーメーション/ボックス推奨。"
+        return (
+            "high",
+            "波乱含み。本命の厚張りより、軸+人気薄まで広げたフォーメーション/ボックス推奨。",
+        )
     if percentile <= 0.40:
         return "low", "堅め。上位人気で順当に決まりやすい。"
     return "mid", "標準。中位人気まで押さえるのが無難。"
@@ -159,7 +164,9 @@ def train_and_save(main_version: str = "v1.0.0", cutoff_year: int = 2020) -> dic
     logger.info("Building feature matrix...")
     df = build_feature_matrix()
     df = df[df["finish_position"].notna()].copy()
-    df = df[df["win_favorite"].notna() & df["win_odds"].notna() & (df["win_odds"] > 0)].copy()
+    df = df[
+        df["win_favorite"].notna() & df["win_odds"].notna() & (df["win_odds"] > 0)
+    ].copy()
 
     main_art = joblib.load(MODELS_DIR / f"{main_version}.joblib")
     df["p_main"] = main_art["model"].predict(df[main_art["feature_columns"]])
@@ -184,9 +191,15 @@ def train_and_save(main_version: str = "v1.0.0", cutoff_year: int = 2020) -> dic
     test = races[races["year"] >= cutoff_year]
 
     scaler = StandardScaler().fit(train[UPSET_FEATS])
-    clf = LogisticRegression(max_iter=1000).fit(scaler.transform(train[UPSET_FEATS]), train["upset"])
+    clf = LogisticRegression(max_iter=1000).fit(
+        scaler.transform(train[UPSET_FEATS]), train["upset"]
+    )
 
-    auc = float(roc_auc_score(test["upset"], clf.predict_proba(scaler.transform(test[UPSET_FEATS]))[:, 1]))
+    auc = float(
+        roc_auc_score(
+            test["upset"], clf.predict_proba(scaler.transform(test[UPSET_FEATS]))[:, 1]
+        )
+    )
     # score distribution (use all races) for percentile mapping
     all_scores = clf.predict_proba(scaler.transform(races[UPSET_FEATS]))[:, 1]
     quantiles = np.quantile(all_scores, np.arange(1, 100) / 100.0)
@@ -204,10 +217,14 @@ def train_and_save(main_version: str = "v1.0.0", cutoff_year: int = 2020) -> dic
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     joblib.dump(artifact, ARTIFACT_PATH)
-    logger.info("Saved upset model to %s (test AUC=%.4f, n=%d)", ARTIFACT_PATH, auc, len(races))
+    logger.info(
+        "Saved upset model to %s (test AUC=%.4f, n=%d)", ARTIFACT_PATH, auc, len(races)
+    )
     return {"test_auc": auc, "n_races": len(races), "path": str(ARTIFACT_PATH)}
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     print(train_and_save())

@@ -49,15 +49,9 @@ class SchedulerManager:
                         "id": job.id,
                         "name": job.name or job.id,
                         "next_run": next_run.isoformat() if next_run else None,
-                        "last_run": self._job_history.get(job.id, {}).get(
-                            "last_run"
-                        ),
-                        "last_status": self._job_history.get(job.id, {}).get(
-                            "status"
-                        ),
-                        "last_detail": self._job_history.get(job.id, {}).get(
-                            "detail"
-                        ),
+                        "last_run": self._job_history.get(job.id, {}).get("last_run"),
+                        "last_status": self._job_history.get(job.id, {}).get("status"),
+                        "last_detail": self._job_history.get(job.id, {}).get("detail"),
                     }
                 )
 

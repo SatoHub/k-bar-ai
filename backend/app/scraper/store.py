@@ -266,9 +266,7 @@ def store_race_stubs(race_list: list[dict], race_date: datetime.date) -> int:
 
             _log_finish(session, log_id, "success", count)
             session.commit()
-            logger.info(
-                "Stored %d race stubs for %s", count, race_date.isoformat()
-            )
+            logger.info("Stored %d race stubs for %s", count, race_date.isoformat())
             return count
 
         except Exception as e:
@@ -358,21 +356,23 @@ def cleanup_scratched_entries(target_date: datetime.date) -> int:
         if deleted > 0:
             # Update head_count on affected races
             for race_uuid in race_uuids:
-                count = session.execute(
-                    select(func.count(RaceEntry.id)).where(
-                        RaceEntry.race_id == race_uuid
-                    )
-                ).scalar() or 0
+                count = (
+                    session.execute(
+                        select(func.count(RaceEntry.id)).where(
+                            RaceEntry.race_id == race_uuid
+                        )
+                    ).scalar()
+                    or 0
+                )
                 session.execute(
-                    update(Race)
-                    .where(Race.id == race_uuid)
-                    .values(head_count=count)
+                    update(Race).where(Race.id == race_uuid).values(head_count=count)
                 )
 
             session.commit()
             logger.info(
                 "Cleaned up %d scratched entries for %s",
-                deleted, target_date.isoformat(),
+                deleted,
+                target_date.isoformat(),
             )
 
         return deleted
@@ -446,7 +446,8 @@ def store_shutuba(shutuba_data: dict, race_date: datetime.date) -> int:
                 if entry.get("post_position") is None:
                     logger.debug(
                         "Skipping entry without post_position: %s (%s)",
-                        horse_name, race_id_str,
+                        horse_name,
+                        race_id_str,
                     )
                     continue
 
@@ -508,14 +509,13 @@ def store_shutuba(shutuba_data: dict, race_date: datetime.date) -> int:
                 if deleted.rowcount > 0:
                     logger.info(
                         "Removed %d scratched entries from %s",
-                        deleted.rowcount, race_id_str,
+                        deleted.rowcount,
+                        race_id_str,
                     )
 
                 # Update head_count on the race to match actual entries
                 session.execute(
-                    update(Race)
-                    .where(Race.id == race_uuid)
-                    .values(head_count=count)
+                    update(Race).where(Race.id == race_uuid).values(head_count=count)
                 )
 
             _log_finish(session, log_id, "success", count)

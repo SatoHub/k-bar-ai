@@ -5,6 +5,7 @@ Revises: f9a3b56c7890
 Create Date: 2026-02-21 22:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -45,6 +46,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_notification_logs_created_at"), table_name="notification_logs")
+    op.drop_index(
+        op.f("ix_notification_logs_created_at"), table_name="notification_logs"
+    )
     op.drop_index(op.f("ix_notification_logs_category"), table_name="notification_logs")
     op.drop_table("notification_logs")

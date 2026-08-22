@@ -51,11 +51,13 @@ async def suggest_bets(
         if e.post_position and e.horse:
             names[e.post_position] = e.horse.name
         if e.post_position and e.win_odds:
-            horses.append({
-                "post": e.post_position,
-                "win_odds": float(e.win_odds),
-                "win_favorite": e.win_favorite,
-            })
+            horses.append(
+                {
+                    "post": e.post_position,
+                    "win_odds": float(e.win_odds),
+                    "win_favorite": e.win_favorite,
+                }
+            )
 
     ranked_pairs = []
     for p in predictions:
@@ -72,9 +74,14 @@ async def suggest_bets(
         "names": {str(k): v for k, v in names.items()},
     }
     if not horses or not ranked:
-        return {**base, "upset_level": "mid", "odds_live": False,
-                "total_allocated": 0, "suggestions": [],
-                "message": "予想またはオッズが未取得のため提案できません"}
+        return {
+            **base,
+            "upset_level": "mid",
+            "odds_live": False,
+            "total_allocated": 0,
+            "suggestions": [],
+            "message": "予想またはオッズが未取得のため提案できません",
+        }
 
     level = ((pred or {}).get("upset") or {}).get("level") or "mid"
 
@@ -88,6 +95,7 @@ async def suggest_bets(
     odds_lookup: dict[str, dict] = {}
     if needed:
         from app.scraper.netkeiba import NetkeibaScraper
+
         try:
             async with NetkeibaScraper(headless=True) as nk:
                 for t in set(needed):
@@ -100,12 +108,17 @@ async def suggest_bets(
                                 if v.get("odds")
                             }
                     except Exception as e:  # noqa: BLE001
-                        logger.warning("odds fetch failed for %s/%s: %s", race_id_str, t, e)
+                        logger.warning(
+                            "odds fetch failed for %s/%s: %s", race_id_str, t, e
+                        )
         except Exception as e:  # noqa: BLE001
             logger.warning("odds scraper session failed: %s", e)
 
     res = suggest(
-        budget, horses, ranked, level,
+        budget,
+        horses,
+        ranked,
+        level,
         odds_lookup=odds_lookup or None,
         alloc_mode=alloc_mode,
         bet_types=bet_types,

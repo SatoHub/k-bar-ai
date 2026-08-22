@@ -30,17 +30,24 @@ async def find_sleepers(
     rdate = race.race_date
 
     targets = [
-        e for e in race.entries
-        if e.win_favorite and e.win_favorite >= min_fav
-        and e.horse and e.horse.netkeiba_id
+        e
+        for e in race.entries
+        if e.win_favorite
+        and e.win_favorite >= min_fav
+        and e.horse
+        and e.horse.netkeiba_id
     ]
     targets.sort(key=lambda e: e.win_favorite)
     targets = targets[:max_horses]
 
     base = {"race_id": race_id_str, "surface": surface}
     if not targets:
-        return {**base, "analyzed": 0, "entries": [],
-                "message": "人気薄の出走馬(またはnetkeiba_id)がありません"}
+        return {
+            **base,
+            "analyzed": 0,
+            "entries": [],
+            "message": "人気薄の出走馬(またはnetkeiba_id)がありません",
+        }
 
     from app.scraper.netkeiba import NetkeibaScraper
 
@@ -53,20 +60,22 @@ async def find_sleepers(
                 logger.warning("career fetch failed %s: %s", e.horse.netkeiba_id, ex)
                 continue
             s = compute_sleeper(surface, e.win_favorite, career, before_date=rdate)
-            entries.append({
-                "post_position": e.post_position,
-                "bracket_number": e.bracket_number,
-                "horse_name": e.horse.name,
-                "win_favorite": e.win_favorite,
-                "is_sleeper": s["is_sleeper"],
-                "score": s["score"],
-                "reason": s["reason"],
-                "surface_runs": s["surface_runs"],
-                "surface_place_rate": s["surface_place_rate"],
-                "has_win": s["has_win"],
-                "graded_good": s["graded_good"],
-                "surface_mismatch": s["surface_mismatch"],
-            })
+            entries.append(
+                {
+                    "post_position": e.post_position,
+                    "bracket_number": e.bracket_number,
+                    "horse_name": e.horse.name,
+                    "win_favorite": e.win_favorite,
+                    "is_sleeper": s["is_sleeper"],
+                    "score": s["score"],
+                    "reason": s["reason"],
+                    "surface_runs": s["surface_runs"],
+                    "surface_place_rate": s["surface_place_rate"],
+                    "has_win": s["has_win"],
+                    "graded_good": s["graded_good"],
+                    "surface_mismatch": s["surface_mismatch"],
+                }
+            )
 
     entries.sort(key=lambda x: -x["score"])
     return {**base, "analyzed": len(entries), "entries": entries}

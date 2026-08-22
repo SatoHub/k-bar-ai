@@ -75,7 +75,10 @@ def test_gami_avoid_is_gami_free():
 
 def test_manual_bet_types_and_budgets():
     res = suggest(
-        6000, HORSES, RANKED, "high",
+        6000,
+        HORSES,
+        RANKED,
+        "high",
         bet_types=["trio", "trifecta", "wide"],
         type_budgets={"trio": 3000, "trifecta": 2000, "wide": 1000},
     )
@@ -83,7 +86,9 @@ def test_manual_bet_types_and_budgets():
     assert types <= {"trio", "trifecta", "wide"}
     # 各券種は指定予算以内
     for s in res["suggestions"]:
-        assert s["cost"] <= {"trio": 3000, "trifecta": 2000, "wide": 1000}[s["bet_type"]]
+        assert (
+            s["cost"] <= {"trio": 3000, "trifecta": 2000, "wide": 1000}[s["bet_type"]]
+        )
 
 
 def test_tansho_umatan_probs_and_selection():
@@ -93,8 +98,13 @@ def test_tansho_umatan_probs_and_selection():
     # 馬単(1→2)は単勝(1着)以下
     assert p_umatan(triples, 1, 2) <= p_tansho(triples, 1)
     # 全7券種を手動指定して提案できる
-    res = suggest(6000, HORSES, RANKED, "mid",
-                  bet_types=["tansho", "fukusho", "umaren", "wide", "umatan", "trio", "trifecta"])
+    res = suggest(
+        6000,
+        HORSES,
+        RANKED,
+        "mid",
+        bet_types=["tansho", "fukusho", "umaren", "wide", "umatan", "trio", "trifecta"],
+    )
     assert res["total_allocated"] <= 6000
     assert len(res["suggestions"]) >= 4
 
@@ -114,17 +124,18 @@ def test_hedge_spectrum_covers_outcome_spectrum():
     """
     from app.services.hedge_service import _spectrum_combos
 
-    honmei = [5, 6, 12, 13, 14]   # AI上位5頭(5=リッツ実3着, 13=サノノ実1着)
-    ana_pool = [1, 3, 8, 9, 2]    # 人気薄プール(8=ディール実2着)
+    honmei = [5, 6, 12, 13, 14]  # AI上位5頭(5=リッツ実3着, 13=サノノ実1着)
+    ana_pool = [1, 3, 8, 9, 2]  # 人気薄プール(8=ディール実2着)
 
     win = tuple(sorted((13, 8, 5)))  # 本命2(13,5)+穴1(8)の的中三連複
     combos, meta = _spectrum_combos("trio", honmei, ana_pool, "high")
 
-    assert win in combos                       # 中間決着を拾える
-    assert meta["axis"] == [5, 6]              # 本命2頭がマルチ軸
+    assert win in combos  # 中間決着を拾える
+    assert meta["axis"] == [5, 6]  # 本命2頭がマルチ軸
     # 単一軸依存の解消: 本命2頭のどちらか1頭を含む組だけが対象
     assert all(5 in c or 6 in c for c in combos)
     # 軸2頭が両方飛んでも…という大波乱は保険(穴box)側でカバー
     from app.services.hedge_service import _insurance_combos
+
     ins = _insurance_combos("trio", ana_pool)
-    assert tuple(sorted((1, 3, 8))) in ins     # 穴3頭の大波乱
+    assert tuple(sorted((1, 3, 8))) in ins  # 穴3頭の大波乱

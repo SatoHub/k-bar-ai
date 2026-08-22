@@ -207,7 +207,9 @@ async def _build_race_info(
         if rid not in top3_map:
             top3_map[rid] = []
         top3_map[rid].append(
-            RaceResultEntry(finish_position=row.finish_position, horse_name=row.horse_name)
+            RaceResultEntry(
+                finish_position=row.finish_position, horse_name=row.horse_name
+            )
         )
 
     # All entries (post / bracket / name) so the client can map names -> 馬番/枠

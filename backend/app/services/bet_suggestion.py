@@ -100,6 +100,7 @@ def _build_menu(ranked: list[int], horses_by_post: dict, level: str) -> list[dic
     ranked: AI予想の良い順の馬番リスト。
     """
     r = ranked
+
     def odds(p):
         return horses_by_post[p]["win_odds"]
 
@@ -108,38 +109,102 @@ def _build_menu(ranked: list[int], horses_by_post: dict, level: str) -> list[dic
 
     menu: list[dict] = []
     if level == "low":  # 堅い → 的中重視
-        menu.append({"bet": "fukusho", "method": "single", "horses": [r[0]],
-                     "rationale": "本命の複勝で手堅く", "weight": 3})
+        menu.append(
+            {
+                "bet": "fukusho",
+                "method": "single",
+                "horses": [r[0]],
+                "rationale": "本命の複勝で手堅く",
+                "weight": 3,
+            }
+        )
         if len(r) >= 3:
-            menu.append({"bet": "wide", "method": "box", "horses": r[:3],
-                         "rationale": "上位3頭のワイドBOX", "weight": 4})
+            menu.append(
+                {
+                    "bet": "wide",
+                    "method": "box",
+                    "horses": r[:3],
+                    "rationale": "上位3頭のワイドBOX",
+                    "weight": 4,
+                }
+            )
         if len(r) >= 5:
-            menu.append({"bet": "trio", "method": "nagashi", "axis": [r[0]],
-                         "partners": r[1:5], "rationale": "本命軸の三連複流し", "weight": 3})
+            menu.append(
+                {
+                    "bet": "trio",
+                    "method": "nagashi",
+                    "axis": [r[0]],
+                    "partners": r[1:5],
+                    "rationale": "本命軸の三連複流し",
+                    "weight": 3,
+                }
+            )
     elif level == "high":  # 荒れ → 配当重視
         # 三連複: 本命2頭 + 穴3頭の広めBOX/フォーメーション
         core = r[:2]
         partners = list(dict.fromkeys(core + r[2:5] + ana_pool[:2]))
-        menu.append({"bet": "trio", "method": "nagashi", "axis": [r[0]],
-                     "partners": [p for p in partners if p != r[0]][:6],
-                     "rationale": "本命軸→人気薄まで広げた三連複(高配当狙い)", "weight": 4})
-        menu.append({"bet": "trifecta", "method": "nagashi_multi", "axis": [r[0]],
-                     "partners": [p for p in partners if p != r[0]][:5],
-                     "rationale": "本命1頭マルチの三連単(一発)", "weight": 2})
+        menu.append(
+            {
+                "bet": "trio",
+                "method": "nagashi",
+                "axis": [r[0]],
+                "partners": [p for p in partners if p != r[0]][:6],
+                "rationale": "本命軸→人気薄まで広げた三連複(高配当狙い)",
+                "weight": 4,
+            }
+        )
+        menu.append(
+            {
+                "bet": "trifecta",
+                "method": "nagashi_multi",
+                "axis": [r[0]],
+                "partners": [p for p in partners if p != r[0]][:5],
+                "rationale": "本命1頭マルチの三連単(一発)",
+                "weight": 2,
+            }
+        )
         if len(ana_pool) >= 1:
-            menu.append({"bet": "wide", "method": "formation",
-                         "sets": [[r[0]], ana_pool[:2]],
-                         "rationale": "本命×人気薄のワイドで押さえ", "weight": 2})
+            menu.append(
+                {
+                    "bet": "wide",
+                    "method": "formation",
+                    "sets": [[r[0]], ana_pool[:2]],
+                    "rationale": "本命×人気薄のワイドで押さえ",
+                    "weight": 2,
+                }
+            )
     else:  # mid → バランス
         if len(r) >= 3:
-            menu.append({"bet": "wide", "method": "box", "horses": r[:3],
-                         "rationale": "上位3頭のワイドBOX", "weight": 3})
+            menu.append(
+                {
+                    "bet": "wide",
+                    "method": "box",
+                    "horses": r[:3],
+                    "rationale": "上位3頭のワイドBOX",
+                    "weight": 3,
+                }
+            )
         if len(r) >= 6:
-            menu.append({"bet": "trio", "method": "nagashi", "axis": [r[0]],
-                         "partners": r[1:6], "rationale": "本命軸の三連複流し", "weight": 4})
+            menu.append(
+                {
+                    "bet": "trio",
+                    "method": "nagashi",
+                    "axis": [r[0]],
+                    "partners": r[1:6],
+                    "rationale": "本命軸の三連複流し",
+                    "weight": 4,
+                }
+            )
         if len(r) >= 4:
-            menu.append({"bet": "umaren", "method": "box", "horses": r[:3],
-                         "rationale": "上位3頭の馬連BOX", "weight": 2})
+            menu.append(
+                {
+                    "bet": "umaren",
+                    "method": "box",
+                    "horses": r[:3],
+                    "rationale": "上位3頭の馬連BOX",
+                    "weight": 2,
+                }
+            )
     return menu
 
 
@@ -147,27 +212,64 @@ def _item_for_type(bet: str, ranked: list[int], level: str) -> dict | None:
     """券種を手動指定したときの、その券種の標準的な買い目構成。"""
     r = ranked
     if bet == "tansho" and len(r) >= 1:
-        return {"bet": "tansho", "method": "single", "horses": [r[0]],
-                "rationale": "本命の単勝", "weight": 1}
+        return {
+            "bet": "tansho",
+            "method": "single",
+            "horses": [r[0]],
+            "rationale": "本命の単勝",
+            "weight": 1,
+        }
     if bet == "umatan" and len(r) >= 4:
-        return {"bet": "umatan", "method": "formation", "sets": [[r[0]], r[1:4]],
-                "rationale": "本命1着→上位への馬単", "weight": 1}
+        return {
+            "bet": "umatan",
+            "method": "formation",
+            "sets": [[r[0]], r[1:4]],
+            "rationale": "本命1着→上位への馬単",
+            "weight": 1,
+        }
     if bet == "fukusho" and len(r) >= 1:
-        return {"bet": "fukusho", "method": "single", "horses": [r[0]],
-                "rationale": "本命の複勝", "weight": 1}
+        return {
+            "bet": "fukusho",
+            "method": "single",
+            "horses": [r[0]],
+            "rationale": "本命の複勝",
+            "weight": 1,
+        }
     if bet == "wide" and len(r) >= 3:
-        return {"bet": "wide", "method": "box", "horses": r[:3],
-                "rationale": "上位3頭のワイドBOX", "weight": 1}
+        return {
+            "bet": "wide",
+            "method": "box",
+            "horses": r[:3],
+            "rationale": "上位3頭のワイドBOX",
+            "weight": 1,
+        }
     if bet == "umaren" and len(r) >= 3:
-        return {"bet": "umaren", "method": "box", "horses": r[:3],
-                "rationale": "上位3頭の馬連BOX", "weight": 1}
+        return {
+            "bet": "umaren",
+            "method": "box",
+            "horses": r[:3],
+            "rationale": "上位3頭の馬連BOX",
+            "weight": 1,
+        }
     if bet == "trio" and len(r) >= 4:
         np_ = 4 if level == "low" else 6
-        return {"bet": "trio", "method": "nagashi", "axis": [r[0]], "partners": r[1:1 + np_],
-                "rationale": "本命軸の三連複流し", "weight": 1}
+        return {
+            "bet": "trio",
+            "method": "nagashi",
+            "axis": [r[0]],
+            "partners": r[1 : 1 + np_],
+            "rationale": "本命軸の三連複流し",
+            "weight": 1,
+        }
     if bet == "trifecta" and len(r) >= 4:
-        return {"bet": "trifecta", "method": "nagashi_multi", "axis": [r[0]], "partners": r[1:6],
-                "rationale": "本命1頭マルチの三連単", "weight": 1}
+        return {
+            "bet": "trifecta",
+            "method": "nagashi_multi",
+            "axis": [r[0]],
+            "partners": r[1:6],
+            "rationale": "本命1頭マルチの三連単",
+            "weight": 1,
+        }
     return None
 
 
@@ -183,7 +285,9 @@ def _combos_for(item: dict) -> list[tuple]:
         k = {"wide": 2, "umaren": 2, "trio": 3, "trifecta": 3}[bet]
         combos = combinations(item["horses"], k)
         if ordered:
-            combos = (p for h in combinations(item["horses"], k) for p in permutations(h))
+            combos = (
+                p for h in combinations(item["horses"], k) for p in permutations(h)
+            )
         return [tuple(c) for c in combos]
     if item["method"] == "formation":
         s1, s2 = item["sets"]
@@ -201,7 +305,9 @@ def _combos_for(item: dict) -> list[tuple]:
         axis = item["axis"]
         partners = item["partners"]
         if bet == "trio":  # 軸1頭 + 相手から2頭
-            return [tuple(sorted((axis[0], *pair))) for pair in combinations(partners, 2)]
+            return [
+                tuple(sorted((axis[0], *pair))) for pair in combinations(partners, 2)
+            ]
         if bet == "trifecta":  # 軸1頭マルチ(全着順) + 相手から2頭
             res = []
             for pair in combinations(partners, 2):
@@ -368,7 +474,9 @@ def suggest(
     if menu_override is not None:  # 独自構成(ヘッジ等)
         menu = menu_override
     elif bet_types:  # 券種を手動指定
-        menu = [m for m in (_item_for_type(b, ranked, upset_level) for b in bet_types) if m]
+        menu = [
+            m for m in (_item_for_type(b, ranked, upset_level) for b in bet_types) if m
+        ]
     else:  # おまかせ(荒れ度で自動選択)
         menu = _build_menu(ranked, by_post, upset_level)
 
@@ -397,8 +505,15 @@ def suggest(
             est_used = est_used or est
             rows.append({"combo": c, "prob": p, "odds": o})
         hit_rate = sum(r["prob"] for r in rows)  # 排他的券種は和=的中率
-        items.append({**m, "points": points, "rows": rows,
-                      "hit_rate": hit_rate, "odds_estimated": est_used})
+        items.append(
+            {
+                **m,
+                "points": points,
+                "rows": rows,
+                "hit_rate": hit_rate,
+                "odds_estimated": est_used,
+            }
+        )
 
     # 予算配分: モード別アロケータで券種ごとに配分
     allocator = _ALLOCATORS.get(alloc_mode, _alloc_gami_avoid)
@@ -439,26 +554,29 @@ def suggest(
             }
             for r, s in kept
         ]
-        suggestions.append({
-            "bet_type": i["bet"],
-            "method": i["method"],
-            "horses": i.get("horses") or i.get("partners") or [],
-            "axis": i.get("axis"),
-            "combos": combos_out,  # 実際に買う組み合わせ(馬番・掛け金・オッズ)
-            "points": len(kept),
-            "dropped_points": len(dropped),  # ガミ回避で除外した買い目数
-            "stake_min": min((s for _, s in kept), default=0),
-            "stake_max": max((s for _, s in kept), default=0),
-            "cost": cost,
-            "hit_rate": round(sum(r["prob"] for r, _ in kept), 4),
-            "ev_ratio": round(exp_return / cost, 3) if cost else 0,
-            "payout_min": min_payout,
-            "payout_max": round(max(payouts)) if payouts else 0,
-            "gami_free": bool(payouts) and min_payout >= cost,  # 当たれば必ず投資以上
-            "odds_estimated": i["odds_estimated"],
-            "rationale": i["rationale"],
-            "recommended": False,
-        })
+        suggestions.append(
+            {
+                "bet_type": i["bet"],
+                "method": i["method"],
+                "horses": i.get("horses") or i.get("partners") or [],
+                "axis": i.get("axis"),
+                "combos": combos_out,  # 実際に買う組み合わせ(馬番・掛け金・オッズ)
+                "points": len(kept),
+                "dropped_points": len(dropped),  # ガミ回避で除外した買い目数
+                "stake_min": min((s for _, s in kept), default=0),
+                "stake_max": max((s for _, s in kept), default=0),
+                "cost": cost,
+                "hit_rate": round(sum(r["prob"] for r, _ in kept), 4),
+                "ev_ratio": round(exp_return / cost, 3) if cost else 0,
+                "payout_min": min_payout,
+                "payout_max": round(max(payouts)) if payouts else 0,
+                "gami_free": bool(payouts)
+                and min_payout >= cost,  # 当たれば必ず投資以上
+                "odds_estimated": i["odds_estimated"],
+                "rationale": i["rationale"],
+                "recommended": False,
+            }
+        )
 
     # おすすめ: low/midは的中率最大、highは想定払戻(payout_max)最大
     if suggestions:

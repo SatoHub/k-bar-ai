@@ -99,7 +99,13 @@ class BaseScraper:
             try:
                 if attempt > 0:
                     backoff = _BACKOFF[min(attempt, len(_BACKOFF) - 1)]
-                    logger.info("Retry %d/%d, backoff %ds for %s", attempt + 1, _MAX_RETRIES, backoff, url)
+                    logger.info(
+                        "Retry %d/%d, backoff %ds for %s",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        backoff,
+                        url,
+                    )
                     await asyncio.sleep(backoff)
 
                 await self._ensure_browser()
@@ -120,7 +126,13 @@ class BaseScraper:
             except Exception as e:
                 last_error = e
                 if attempt < _MAX_RETRIES - 1:
-                    logger.warning("Attempt %d/%d failed for %s: %s", attempt + 1, _MAX_RETRIES, url, e)
+                    logger.warning(
+                        "Attempt %d/%d failed for %s: %s",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        url,
+                        e,
+                    )
                 # else: will raise after loop
 
             finally:
@@ -165,7 +177,13 @@ class BaseScraper:
             except Exception as e:
                 last_error = e
                 if attempt < _MAX_RETRIES - 1:
-                    logger.warning("Attempt %d/%d failed for JSON %s: %s", attempt + 1, _MAX_RETRIES, url, e)
+                    logger.warning(
+                        "Attempt %d/%d failed for JSON %s: %s",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        url,
+                        e,
+                    )
 
             finally:
                 if page:

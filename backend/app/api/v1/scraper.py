@@ -44,7 +44,11 @@ def _is_running(key: str) -> bool:
     if started is None:
         return False
     if time.monotonic() - started > _LOCK_TIMEOUT_SECONDS:
-        logger.warning("Lock expired for %s (started %.0fs ago), releasing", key, time.monotonic() - started)
+        logger.warning(
+            "Lock expired for %s (started %.0fs ago), releasing",
+            key,
+            time.monotonic() - started,
+        )
         _running.pop(key, None)
         return False
     return True
@@ -121,7 +125,9 @@ async def _run_shutuba(target_date: dt.date) -> None:
         date_compact = target_date.strftime("%Y%m%d")
         async with NetkeibaScraper(headless=True) as nk:
             race_list = await nk.scrape_race_list(date_compact)
-            logger.info("Scraper[shutuba]: %d races for %s", len(race_list), target_date)
+            logger.info(
+                "Scraper[shutuba]: %d races for %s", len(race_list), target_date
+            )
             if not race_list:
                 return
             total = 0
@@ -140,10 +146,18 @@ async def _run_shutuba(target_date: dt.date) -> None:
         if failed > 0:
             logger.error(
                 "Scraper[shutuba]: stored %d entries for %s (%d/%d races FAILED)",
-                total, target_date, failed, len(race_list),
+                total,
+                target_date,
+                failed,
+                len(race_list),
             )
         else:
-            logger.info("Scraper[shutuba]: stored %d entries for %s (all %d races OK)", total, target_date, len(race_list))
+            logger.info(
+                "Scraper[shutuba]: stored %d entries for %s (all %d races OK)",
+                total,
+                target_date,
+                len(race_list),
+            )
     except Exception as e:
         logger.error("Scraper[shutuba] failed: %s", e, exc_info=True)
     finally:
@@ -169,7 +183,9 @@ async def shutuba_status(target_date: str | None = Query(None, alias="date")):
     date_obj = _parse_date(target_date)
     key = f"shutuba:{date_obj.isoformat()}"
     info = _query_scrape_log("shutuba", date_obj)
-    return TaskStatusResponse(date=date_obj.isoformat(), running=_is_running(key), **info)
+    return TaskStatusResponse(
+        date=date_obj.isoformat(), running=_is_running(key), **info
+    )
 
 
 # =========================================================================
@@ -222,7 +238,9 @@ async def odds_status(target_date: str | None = Query(None, alias="date")):
     date_obj = _parse_date(target_date)
     key = f"odds:{date_obj.isoformat()}"
     info = _query_scrape_log("odds", date_obj)
-    return TaskStatusResponse(date=date_obj.isoformat(), running=_is_running(key), **info)
+    return TaskStatusResponse(
+        date=date_obj.isoformat(), running=_is_running(key), **info
+    )
 
 
 # =========================================================================
@@ -275,7 +293,9 @@ async def results_status(target_date: str | None = Query(None, alias="date")):
     date_obj = _parse_date(target_date)
     key = f"results:{date_obj.isoformat()}"
     info = _query_scrape_log("result", date_obj)
-    return TaskStatusResponse(date=date_obj.isoformat(), running=_is_running(key), **info)
+    return TaskStatusResponse(
+        date=date_obj.isoformat(), running=_is_running(key), **info
+    )
 
 
 # =========================================================================
@@ -299,7 +319,9 @@ async def _run_predict(target_date: dt.date) -> None:
             unique_races = len({r["race_id_str"] for r in results})
             logger.info(
                 "Scraper[predict]: %d predictions across %d races for %s",
-                len(results), unique_races, target_date,
+                len(results),
+                unique_races,
+                target_date,
             )
         else:
             logger.info("Scraper[predict]: no races to predict for %s", target_date)
@@ -348,8 +370,7 @@ async def _run_calendar() -> None:
         today = _today_jst()
         days_ahead = settings.SCHED_CALENDAR_DAYS_AHEAD
         date_strings = [
-            (today + timedelta(days=i)).strftime("%Y%m%d")
-            for i in range(days_ahead)
+            (today + timedelta(days=i)).strftime("%Y%m%d") for i in range(days_ahead)
         ]
 
         results = await fetch_race_lists_multi(date_strings)

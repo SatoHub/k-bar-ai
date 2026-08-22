@@ -14,9 +14,7 @@ class ImprovementProposal(Base):
     month: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     proposal_type: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="pending"
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     user_response_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime, nullable=True
     )

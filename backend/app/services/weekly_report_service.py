@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bet_record import BetRecord
@@ -23,6 +23,7 @@ async def build_weekly_report_data(session: AsyncSession) -> dict:
     """
     from zoneinfo import ZoneInfo
     from app.config import settings
+
     tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
     today = datetime.datetime.now(tz).date()
     week_ago = today - datetime.timedelta(days=7)
@@ -45,18 +46,11 @@ async def build_weekly_report_data(session: AsyncSession) -> dict:
     # --- Per bet_type hit rates from AI predictions ---
     from app.services.results_service import _compute_hits
 
-    pred_race_ids_q = (
-        select(PredictionLog.race_id)
-        .distinct()
-        .subquery()
-    )
-    races_q = (
-        select(Race)
-        .where(
-            Race.id.in_(select(pred_race_ids_q.c.race_id)),
-            Race.race_date >= week_ago,
-            Race.race_date <= today,
-        )
+    pred_race_ids_q = select(PredictionLog.race_id).distinct().subquery()
+    races_q = select(Race).where(
+        Race.id.in_(select(pred_race_ids_q.c.race_id)),
+        Race.race_date >= week_ago,
+        Race.race_date <= today,
     )
     races_result = await session.execute(races_q)
     races = list(races_result.scalars().all())
@@ -75,23 +69,20 @@ async def build_weekly_report_data(session: AsyncSession) -> dict:
         preds_by_race: dict[str, list[dict]] = {}
         for pred in pred_result.scalars().all():
             rid = str(pred.race_id)
-            preds_by_race.setdefault(rid, []).append(
-                {"horse_id": str(pred.horse_id)}
-            )
+            preds_by_race.setdefault(rid, []).append({"horse_id": str(pred.horse_id)})
 
         # Finish positions
-        entries_q = (
-            select(RaceEntry)
-            .where(
-                RaceEntry.race_id.in_(race_ids),
-                RaceEntry.finish_position.isnot(None),
-            )
+        entries_q = select(RaceEntry).where(
+            RaceEntry.race_id.in_(race_ids),
+            RaceEntry.finish_position.isnot(None),
         )
         entries_result = await session.execute(entries_q)
         finish_by_race: dict[str, dict[str, int]] = {}
         for entry in entries_result.scalars().all():
             rid = str(entry.race_id)
-            finish_by_race.setdefault(rid, {})[str(entry.horse_id)] = entry.finish_position
+            finish_by_race.setdefault(rid, {})[str(entry.horse_id)] = (
+                entry.finish_position
+            )
 
         # Aggregate
         bet_types_map = {
@@ -122,7 +113,9 @@ async def build_weekly_report_data(session: AsyncSession) -> dict:
             hit_rates[label] = {
                 "hits": counters[bt],
                 "total": total_pred_races,
-                "rate": round(counters[bt] / total_pred_races * 100, 1) if total_pred_races > 0 else 0.0,
+                "rate": round(counters[bt] / total_pred_races * 100, 1)
+                if total_pred_races > 0
+                else 0.0,
             }
 
     return {

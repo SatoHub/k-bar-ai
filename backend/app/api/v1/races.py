@@ -162,7 +162,9 @@ async def get_combo_odds(
     from app.scraper.parsers.odds import NETKEIBA_ODDS_TYPE_MAP
 
     if body.bet_type not in NETKEIBA_ODDS_TYPE_MAP:
-        raise HTTPException(status_code=400, detail=f"Unknown bet_type: {body.bet_type}")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown bet_type: {body.bet_type}"
+        )
     if not body.selections:
         raise HTTPException(status_code=400, detail="selections must not be empty")
 
@@ -292,8 +294,13 @@ async def post_hedge(
         raise HTTPException(status_code=400, detail="券種の指定が不正です")
     ratio = min(1.0, max(0.0, body.honmei_ratio))
     res = await suggest_hedge(
-        session, race_id, budget=body.budget, honmei_ratio=ratio, min_fav=body.min_fav,
-        honmei_bet=body.honmei_bet, ana_bet=body.ana_bet,
+        session,
+        race_id,
+        budget=body.budget,
+        honmei_ratio=ratio,
+        min_fav=body.min_fav,
+        honmei_bet=body.honmei_bet,
+        ana_bet=body.ana_bet,
     )
     if res is None:
         raise HTTPException(status_code=404, detail="Race not found")

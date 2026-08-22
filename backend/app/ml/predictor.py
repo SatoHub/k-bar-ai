@@ -225,4 +225,6 @@ def _save_predictions(
             )
             session.execute(stmt)
             session.commit()
-            logger.info("Saved %d predictions to DB (deduped from %d)", len(rows), len(results))
+            logger.info(
+                "Saved %d predictions to DB (deduped from %d)", len(rows), len(results)
+            )

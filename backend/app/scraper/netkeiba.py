@@ -109,9 +109,7 @@ class NetkeibaScraper:
         await self._base._wait()
         data = await self._base.fetch_json(url)
         odds = parse_combo_odds(data, bet_type, selections)
-        logger.info(
-            "ComboOdds %s %s %s: %s", race_id, bet_type, selections, odds
-        )
+        logger.info("ComboOdds %s %s %s: %s", race_id, bet_type, selections, odds)
         return odds
 
     async def scrape_full_odds(self, race_id: str, bet_type: str) -> dict | None:

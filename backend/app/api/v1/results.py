@@ -25,6 +25,7 @@ router = APIRouter(prefix="/results", tags=["results"])
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class ResultTop3Entry(BaseModel):
     finish_position: int
     horse_name: str
@@ -132,6 +133,7 @@ def _parse_date(ds: str) -> datetime.date:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/latest-date", response_model=LatestDateResponse)
 async def latest_date(session: AsyncSession = Depends(get_session)):
     """Return the latest date with confirmed results."""
@@ -175,7 +177,9 @@ async def list_results(
 
 @router.get("/summary", response_model=ResultsSummaryResponse)
 async def results_summary(
-    year_month: str | None = Query(None, description="YYYY-MM (optional, omit for all-time)"),
+    year_month: str | None = Query(
+        None, description="YYYY-MM (optional, omit for all-time)"
+    ),
     racecourse: str | None = Query(None),
     session: AsyncSession = Depends(get_session),
 ):
@@ -183,5 +187,7 @@ async def results_summary(
     year, month = None, None
     if year_month:
         year, month = _parse_year_month(year_month)
-    data = await get_results_summary(session, year=year, month=month, racecourse=racecourse)
+    data = await get_results_summary(
+        session, year=year, month=month, racecourse=racecourse
+    )
     return data

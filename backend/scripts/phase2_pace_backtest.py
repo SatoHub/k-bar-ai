@@ -45,11 +45,19 @@ from app.ml.features import build_feature_matrix
 from app.ml.oddsfree import oddsfree_feature_columns
 from app.ml.upset_score import UPSET_FEATS, race_features
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("phase2")
 
 MAIN_VERSION = "v1.0.0"
-PACE_FEATS = ["horse_style", "style_consistency", "race_n_front", "race_pace_pressure", "style_vs_pace"]
+PACE_FEATS = [
+    "horse_style",
+    "style_consistency",
+    "race_n_front",
+    "race_pace_pressure",
+    "style_vs_pace",
+]
 
 
 def _load_corner() -> pd.DataFrame:
@@ -90,11 +98,15 @@ def _add_pace_features(df: pd.DataFrame) -> pd.DataFrame:
         style = prior_sum / prior_cnt
         var = prior_sq / prior_cnt - style**2
     df["horse_style"] = style.where(prior_cnt > 0).fillna(0.5)
-    df["style_consistency"] = np.sqrt(var.clip(lower=0)).where(prior_cnt > 1).fillna(0.3)
+    df["style_consistency"] = (
+        np.sqrt(var.clip(lower=0)).where(prior_cnt > 1).fillna(0.3)
+    )
 
     # race-level 展開: front-runner count + pace pressure (fast pace favors closers)
     is_front = (df["horse_style"] > 0.65).astype(float)
-    df["race_n_front"] = df.assign(_fr=is_front).groupby("race_id_str")["_fr"].transform("sum")
+    df["race_n_front"] = (
+        df.assign(_fr=is_front).groupby("race_id_str")["_fr"].transform("sum")
+    )
     df["race_pace_pressure"] = df.groupby("race_id_str")["horse_style"].transform(
         lambda s: s.nlargest(min(3, len(s))).mean()
     )
@@ -108,12 +120,26 @@ def _train_lgb(train_df, feats, cat_cols):
     X = train_df[feats]
     y = train_df[TARGET_COLUMN].values.astype(np.float64)
     vc = int(len(X) * 0.9)
-    tr = lgb.Dataset(X.iloc[:vc], label=y[:vc], categorical_feature=cat_cols, free_raw_data=False)
-    va = lgb.Dataset(X.iloc[vc:], label=y[vc:], categorical_feature=cat_cols, free_raw_data=False, reference=tr)
+    tr = lgb.Dataset(
+        X.iloc[:vc], label=y[:vc], categorical_feature=cat_cols, free_raw_data=False
+    )
+    va = lgb.Dataset(
+        X.iloc[vc:],
+        label=y[vc:],
+        categorical_feature=cat_cols,
+        free_raw_data=False,
+        reference=tr,
+    )
     return lgb.train(
-        LGBM_PARAMS, tr, num_boost_round=LGBM_NUM_BOOST_ROUND,
-        valid_sets=[va], valid_names=["val"],
-        callbacks=[lgb.early_stopping(LGBM_EARLY_STOPPING_ROUNDS), lgb.log_evaluation(0)],
+        LGBM_PARAMS,
+        tr,
+        num_boost_round=LGBM_NUM_BOOST_ROUND,
+        valid_sets=[va],
+        valid_names=["val"],
+        callbacks=[
+            lgb.early_stopping(LGBM_EARLY_STOPPING_ROUNDS),
+            lgb.log_evaluation(0),
+        ],
     )
 
 
@@ -133,11 +159,17 @@ def _coverage(df, flagged_ids, score_col, K, restrict_band=None):
             himo = set(pool.nlargest(K, score_col)["entry_id"])
         sel = axis | himo
         box_hits.append(len(actual_top3 & sel) == 3)
-        for _, row in g[(g["finish_position"] <= 3) & (g["win_favorite"] >= 6)].iterrows():
+        for _, row in g[
+            (g["finish_position"] <= 3) & (g["win_favorite"] >= 6)
+        ].iterrows():
             longs_tot += 1
             if row["entry_id"] in himo:
                 longs_hit += 1
-    return np.mean(box_hits) if box_hits else 0, (longs_hit / longs_tot if longs_tot else 0), longs_tot
+    return (
+        np.mean(box_hits) if box_hits else 0,
+        (longs_hit / longs_tot if longs_tot else 0),
+        longs_tot,
+    )
 
 
 def main() -> int:
@@ -150,7 +182,9 @@ def main() -> int:
     logger.info("Building feature matrix...")
     df = build_feature_matrix()
     df = df[df["finish_position"].notna()].copy()
-    df = df[df["win_favorite"].notna() & df["win_odds"].notna() & (df["win_odds"] > 0)].copy()
+    df = df[
+        df["win_favorite"].notna() & df["win_odds"].notna() & (df["win_odds"] > 0)
+    ].copy()
 
     logger.info("Merging corner_pos and computing pace features...")
     corner = _load_corner()
@@ -189,11 +223,16 @@ def main() -> int:
     for rid, g in test.groupby("race_id_str"):
         if g["win_favorite"].nunique() < 3 or (g["win_favorite"] == 1).sum() != 1:
             continue
-        feat = race_features(g["win_odds"].to_numpy(float), g["win_favorite"].to_numpy(float),
-                             g["p_main"].to_numpy(float))
+        feat = race_features(
+            g["win_odds"].to_numpy(float),
+            g["win_favorite"].to_numpy(float),
+            g["p_main"].to_numpy(float),
+        )
         rows.append({"race_id_str": rid, **feat})
     rdf = pd.DataFrame(rows).dropna(subset=UPSET_FEATS)
-    rdf["upset_score"] = up["model"].predict_proba(up["scaler"].transform(rdf[UPSET_FEATS]))[:, 1]
+    rdf["upset_score"] = up["model"].predict_proba(
+        up["scaler"].transform(rdf[UPSET_FEATS])
+    )[:, 1]
     thr = rdf["upset_score"].quantile(args.flag_quantile)
     flagged = set(rdf[rdf["upset_score"] >= thr]["race_id_str"])
     logger.info("Flagged %d upset races", len(flagged))
@@ -216,8 +255,10 @@ def main() -> int:
     print(f"\n  (人気薄好走の母数: {tot}頭)")
 
     # pace feature importance in model B
-    imp = sorted(zip(pace_feats, m_pace.feature_importance(importance_type="gain")),
-                 key=lambda x: -x[1])
+    imp = sorted(
+        zip(pace_feats, m_pace.feature_importance(importance_type="gain")),
+        key=lambda x: -x[1],
+    )
     print("\n  --- +pace モデルの脚質/展開特徴量の重要度(gain) ---")
     for name, gain in imp:
         if name in PACE_FEATS:

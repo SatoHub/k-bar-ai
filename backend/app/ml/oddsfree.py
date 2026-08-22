@@ -77,7 +77,9 @@ def train_oddsfree_model(
 
     train = df[df["race_date"].dt.year < cutoff_year]
     test = df[df["race_date"].dt.year >= cutoff_year]
-    logger.info("oddsfree train=%d test=%d (cutoff=%d)", len(train), len(test), cutoff_year)
+    logger.info(
+        "oddsfree train=%d test=%d (cutoff=%d)", len(train), len(test), cutoff_year
+    )
 
     X_train = train[feats].copy()
     y_train = train[TARGET_COLUMN].values.astype(np.float64)
@@ -88,9 +90,15 @@ def train_oddsfree_model(
     X_tr, y_tr = X_train.iloc[:val_cutoff], y_train[:val_cutoff]
     X_val, y_val = X_train.iloc[val_cutoff:], y_train[val_cutoff:]
 
-    train_set = lgb.Dataset(X_tr, label=y_tr, categorical_feature=cat_cols, free_raw_data=False)
+    train_set = lgb.Dataset(
+        X_tr, label=y_tr, categorical_feature=cat_cols, free_raw_data=False
+    )
     val_set = lgb.Dataset(
-        X_val, label=y_val, categorical_feature=cat_cols, free_raw_data=False, reference=train_set
+        X_val,
+        label=y_val,
+        categorical_feature=cat_cols,
+        free_raw_data=False,
+        reference=train_set,
     )
 
     logger.info("Training odds-independent LightGBM...")

@@ -61,14 +61,18 @@ class NotificationService:
                         messages=[TextMessage(text=text)],
                     )
                 )
-            await self._log("outgoing", "text", "general", "success", {"text": text[:200]})
+            await self._log(
+                "outgoing", "text", "general", "success", {"text": text[:200]}
+            )
             return True
         except Exception as e:
             logger.error("push_text failed: %s", e, exc_info=True)
             await self._log("outgoing", "text", "general", "error", error=str(e))
             return False
 
-    async def push_flex(self, alt_text: str, flex_dict: dict, category: str = "general") -> bool:
+    async def push_flex(
+        self, alt_text: str, flex_dict: dict, category: str = "general"
+    ) -> bool:
         """Send a Flex Message to the configured user."""
         if not self._configured:
             logger.debug("LINE not configured, skipping push_flex")
@@ -85,7 +89,9 @@ class NotificationService:
                         messages=[FlexMessage(alt_text=alt_text, contents=container)],
                     )
                 )
-            await self._log("outgoing", "flex", category, "success", {"alt_text": alt_text})
+            await self._log(
+                "outgoing", "flex", category, "success", {"alt_text": alt_text}
+            )
             return True
         except Exception as e:
             logger.error("push_flex failed: %s", e, exc_info=True)
@@ -152,12 +158,15 @@ class NotificationService:
             return False
 
         import datetime
+
         today = datetime.date.today()
-        last_month = (today.replace(day=1) - datetime.timedelta(days=1))
+        last_month = today.replace(day=1) - datetime.timedelta(days=1)
         month_str = f"{last_month.year}年{last_month.month}月"
 
         flex_dict = build_monthly_proposal_flex(month_str, proposals)
-        return await self.push_flex("月次改善提案", flex_dict, category="monthly_proposal")
+        return await self.push_flex(
+            "月次改善提案", flex_dict, category="monthly_proposal"
+        )
 
     async def push_test_message(self) -> bool:
         """Send a test message to verify configuration."""

@@ -75,7 +75,11 @@ async def get_race_predictions(
         select(PredictionLog)
         .where(PredictionLog.race_id == race.id)
         .distinct(PredictionLog.race_id, PredictionLog.horse_id)
-        .order_by(PredictionLog.race_id, PredictionLog.horse_id, PredictionLog.predicted_score.desc())
+        .order_by(
+            PredictionLog.race_id,
+            PredictionLog.horse_id,
+            PredictionLog.predicted_score.desc(),
+        )
     )
     predictions = sorted(
         result.scalars().all(),
@@ -139,7 +143,9 @@ async def get_race_predictions(
         if entry is not None:
             upset_inputs.append(
                 {
-                    "win_odds": float(entry.win_odds) if entry.win_odds is not None else None,
+                    "win_odds": float(entry.win_odds)
+                    if entry.win_odds is not None
+                    else None,
                     "win_favorite": entry.win_favorite,
                     "predicted_score": p.predicted_score,
                 }

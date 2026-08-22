@@ -268,7 +268,9 @@ class TrackConditionResponse(BaseModel):
     race_id: str
     racecourse_name: str | None = None
     track_condition: str | None = None  # 良/稍重/重/不良 (コード)
-    detail: TrackConditionDetailData | None = None  # 含水率・クッション値（無ければnull）
+    detail: TrackConditionDetailData | None = (
+        None  # 含水率・クッション値（無ければnull）
+    )
 
 
 # --- Aptitude schemas ---

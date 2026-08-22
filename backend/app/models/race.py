@@ -28,7 +28,9 @@ class Race(Base):
     race_symbols: Mapped[dict | None] = mapped_column(JSONB)
     post_time: Mapped[datetime.time | None] = mapped_column(Time)
     head_count: Mapped[int | None] = mapped_column(SmallInteger)
-    stub_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    stub_only: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     data_source: Mapped[str | None] = mapped_column(String(16))
 
     entries: Mapped[list["RaceEntry"]] = relationship(back_populates="race")  # noqa: F821

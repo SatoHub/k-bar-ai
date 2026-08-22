@@ -50,7 +50,10 @@ async def line_webhook(request: Request):
             logger.info("LINE FollowEvent: user_id=%s", event.source.user_id)
             # Log the follow for reference
             await svc._log(
-                "incoming", "text", "webhook", "success",
+                "incoming",
+                "text",
+                "webhook",
+                "success",
                 {"event": "follow", "user_id": event.source.user_id},
             )
 
@@ -58,7 +61,10 @@ async def line_webhook(request: Request):
             data = event.postback.data
             logger.info("LINE PostbackEvent: data=%s", data)
             await svc._log(
-                "incoming", "text", "webhook", "success",
+                "incoming",
+                "text",
+                "webhook",
+                "success",
                 {"event": "postback", "data": data},
             )
             await _handle_postback(svc, data)
@@ -66,7 +72,10 @@ async def line_webhook(request: Request):
         elif isinstance(event, MessageEvent):
             logger.info("LINE MessageEvent received")
             await svc._log(
-                "incoming", "text", "webhook", "success",
+                "incoming",
+                "text",
+                "webhook",
+                "success",
                 {"event": "message"},
             )
 
@@ -94,7 +103,9 @@ async def test_notification():
     return NotificationTestResponse(
         configured=True,
         sent=sent,
-        message="テスト通知を送信しました。" if sent else "送信に失敗しました。ログを確認してください。",
+        message="テスト通知を送信しました。"
+        if sent
+        else "送信に失敗しました。ログを確認してください。",
     )
 
 
@@ -131,12 +142,16 @@ async def list_notification_logs(
         # Paginated results
         offset = (page - 1) * per_page
         rows = (
-            await session.execute(
-                base_q.order_by(NotificationLog.created_at.desc())
-                .offset(offset)
-                .limit(per_page)
+            (
+                await session.execute(
+                    base_q.order_by(NotificationLog.created_at.desc())
+                    .offset(offset)
+                    .limit(per_page)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     await engine.dispose()
 
@@ -170,8 +185,6 @@ async def _handle_postback(svc, data: str) -> None:
 
 async def _handle_miss_reason(svc, params: dict) -> None:
     """Handle miss reason postback — save to DB and reply."""
-    import datetime
-    import uuid
 
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession

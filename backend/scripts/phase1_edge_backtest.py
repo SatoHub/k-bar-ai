@@ -40,7 +40,9 @@ from app.ml.oddsfree import (
     train_oddsfree_model,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("phase1")
 
 MAIN_VERSION = "v1.0.0"
@@ -66,7 +68,9 @@ def _race_features(g: pd.DataFrame) -> dict:
 
     pmain = g["p_main"].astype(float).to_numpy()
     pq = pmain / pmain.sum() if pmain.sum() > 0 else np.full(n, 1.0 / n)
-    pmain_entropy = float(-(pq * np.log(pq + 1e-12)).sum() / np.log(n)) if n > 1 else 0.0
+    pmain_entropy = (
+        float(-(pq * np.log(pq + 1e-12)).sum() / np.log(n)) if n > 1 else 0.0
+    )
 
     return {
         "field_size": n,
@@ -98,9 +102,15 @@ UPSET_FEATS = [
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cutoff", type=int, default=2020)
-    ap.add_argument("--flag-quantile", type=float, default=0.70,
-                    help="races with upset_score above this quantile are flagged 荒れ")
-    ap.add_argument("--himo", type=int, default=6, help="number of ヒモ candidates per side")
+    ap.add_argument(
+        "--flag-quantile",
+        type=float,
+        default=0.70,
+        help="races with upset_score above this quantile are flagged 荒れ",
+    )
+    ap.add_argument(
+        "--himo", type=int, default=6, help="number of ヒモ candidates per side"
+    )
     ap.add_argument("--retrain-oddsfree", action="store_true")
     args = ap.parse_args()
 
@@ -108,7 +118,9 @@ def main() -> int:
     logger.info("Building feature matrix (this loads the full history)...")
     df = build_feature_matrix()
     df = df[df["finish_position"].notna()].copy()
-    df = df[df["win_favorite"].notna() & df["win_odds"].notna() & (df["win_odds"] > 0)].copy()
+    df = df[
+        df["win_favorite"].notna() & df["win_odds"].notna() & (df["win_odds"] > 0)
+    ].copy()
 
     # ---------------------------------------------------- main model p_main
     main_art = joblib.load(MODELS_DIR / f"{MAIN_VERSION}.joblib")
@@ -122,14 +134,15 @@ def main() -> int:
         train_oddsfree_model(version=MAIN_VERSION, cutoff_year=args.cutoff, df=df)
     of_art = load_oddsfree(MAIN_VERSION)
     df["p_indep"] = of_art["model"].predict(df[oddsfree_feature_columns()])
-    logger.info("Odds-independent model scored %d rows (test AUC=%s)",
-                len(df), of_art.get("metrics", {}).get("roc_auc"))
+    logger.info(
+        "Odds-independent model scored %d rows (test AUC=%s)",
+        len(df),
+        of_art.get("metrics", {}).get("roc_auc"),
+    )
 
     # ---------------------------------------------------- empirical place rate
     train_mask = df["race_date"].dt.year < args.cutoff
-    place_rate_by_fav = (
-        df[train_mask].groupby("win_favorite")["is_place"].mean()
-    )
+    place_rate_by_fav = df[train_mask].groupby("win_favorite")["is_place"].mean()
     # myoumi: model (odds-free) thinks more likely top3 than popularity implies
     df["market_place"] = df["win_favorite"].map(place_rate_by_fav).fillna(0.1)
     df["myoumi"] = df["p_indep"] - df["market_place"]
@@ -189,8 +202,10 @@ def main() -> int:
     )
     for d, r in cal.iterrows():
         bar = "#" * int(r["actual_upset"] * 40)
-        print(f"   D{int(d)+1:2d} n={int(r['n']):4d} pred={r['mean_score']:.2f} "
-              f"actual={r['actual_upset']:.1%} 平均最低人気(top3)={r['top3_max_fav']:.1f} {bar}")
+        print(
+            f"   D{int(d) + 1:2d} n={int(r['n']):4d} pred={r['mean_score']:.2f} "
+            f"actual={r['actual_upset']:.1%} 平均最低人気(top3)={r['top3_max_fav']:.1f} {bar}"
+        )
 
     print("\n  --- ロジスティック係数 (絶対値順, +で荒れ方向) ---")
     coefs = sorted(zip(UPSET_FEATS, clf.coef_[0]), key=lambda x: -abs(x[1]))
@@ -221,7 +236,9 @@ def main() -> int:
         stats["naive"].append(len(actual_top3 & naive_set) == 3)
 
         # longshot capture: actual top3 horses with 人気>=6
-        longs = set(g[(g["finish_position"] <= 3) & (g["win_favorite"] >= 6)]["horse_uuid"])
+        longs = set(
+            g[(g["finish_position"] <= 3) & (g["win_favorite"] >= 6)]["horse_uuid"]
+        )
         for h in longs:
             longshot_capture["ours"][1] += 1
             longshot_capture["naive"][1] += 1
@@ -231,14 +248,18 @@ def main() -> int:
                 longshot_capture["naive"][0] += 1
 
     print("\n" + "=" * 70)
-    print("【2】ヒモ妙味カバレッジ (荒れ判定レース=上位%.0f%%, ヒモ各%d頭)"
-          % ((1 - args.flag_quantile) * 100, K))
+    print(
+        "【2】ヒモ妙味カバレッジ (荒れ判定レース=上位%.0f%%, ヒモ各%d頭)"
+        % ((1 - args.flag_quantile) * 100, K)
+    )
     print("=" * 70)
-    print(f"  対象レース: {len(flagged_ids)}  (軸=人気1,2 + ヒモ{K}頭, 計~{2+K}頭)")
+    print(f"  対象レース: {len(flagged_ids)}  (軸=人気1,2 + ヒモ{K}頭, 計~{2 + K}頭)")
     for name, label in [("ours", "妙味(oddsfree)"), ("naive", "人気順naive")]:
         arr = stats[name]
         hit = np.mean(arr) if arr else 0
-        print(f"  三連複ボックス的中率 [{label:16s}]: {hit:.1%} ({sum(arr)}/{len(arr)})")
+        print(
+            f"  三連複ボックス的中率 [{label:16s}]: {hit:.1%} ({sum(arr)}/{len(arr)})"
+        )
     print("  --- 人気薄(6人気以下)で実際に3着内に来た馬の捕捉率 ---")
     for name, label in [("ours", "妙味(oddsfree)"), ("naive", "人気順naive")]:
         hit, tot = longshot_capture[name]

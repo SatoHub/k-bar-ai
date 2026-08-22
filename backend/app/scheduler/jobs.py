@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -41,16 +41,18 @@ def _auto_detect_miss_reason(race, finish_pos: int | None) -> str:
     return f"{' '.join(parts)} 着外" if parts else "着外"
 
 
-def register_jobs(
-    scheduler: AsyncIOScheduler, manager: SchedulerManager
-) -> None:
+def register_jobs(scheduler: AsyncIOScheduler, manager: SchedulerManager) -> None:
     """Register all scheduled jobs."""
     tz = settings.SCHEDULER_TIMEZONE
 
     # 1. Calendar scan: daily at 6:00 JST
     scheduler.add_job(
         job_calendar,
-        CronTrigger(hour=settings.SCHED_CALENDAR_HOUR, minute=settings.SCHED_CALENDAR_MINUTE, timezone=tz),
+        CronTrigger(
+            hour=settings.SCHED_CALENDAR_HOUR,
+            minute=settings.SCHED_CALENDAR_MINUTE,
+            timezone=tz,
+        ),
         id="calendar",
         name="カレンダースキャン",
         kwargs={"manager": manager},
@@ -60,7 +62,11 @@ def register_jobs(
     # 2a. Shutuba fetch (morning): daily at 9:00 JST
     scheduler.add_job(
         job_shutuba,
-        CronTrigger(hour=settings.SCHED_SHUTUBA_MORNING_HOUR, minute=settings.SCHED_SHUTUBA_MORNING_MINUTE, timezone=tz),
+        CronTrigger(
+            hour=settings.SCHED_SHUTUBA_MORNING_HOUR,
+            minute=settings.SCHED_SHUTUBA_MORNING_MINUTE,
+            timezone=tz,
+        ),
         id="shutuba_morning",
         name="出馬表取得(朝)",
         kwargs={"manager": manager},
@@ -70,7 +76,11 @@ def register_jobs(
     # 2b. Shutuba fetch (evening): daily at 18:00 JST (fallback)
     scheduler.add_job(
         job_shutuba,
-        CronTrigger(hour=settings.SCHED_SHUTUBA_HOUR, minute=settings.SCHED_SHUTUBA_MINUTE, timezone=tz),
+        CronTrigger(
+            hour=settings.SCHED_SHUTUBA_HOUR,
+            minute=settings.SCHED_SHUTUBA_MINUTE,
+            timezone=tz,
+        ),
         id="shutuba",
         name="出馬表取得(夕方)",
         kwargs={"manager": manager},
@@ -118,7 +128,11 @@ def register_jobs(
     # 5b. Prediction (evening): daily at 18:30 JST (after evening shutuba at 18:00)
     scheduler.add_job(
         job_predict,
-        CronTrigger(hour=settings.SCHED_PREDICT_HOUR, minute=settings.SCHED_PREDICT_MINUTE, timezone=tz),
+        CronTrigger(
+            hour=settings.SCHED_PREDICT_HOUR,
+            minute=settings.SCHED_PREDICT_MINUTE,
+            timezone=tz,
+        ),
         id="predict",
         name="AI予想実行(夕方)",
         kwargs={"manager": manager},
@@ -234,6 +248,7 @@ def register_jobs(
 # Job: Calendar scan
 # ---------------------------------------------------------------------------
 
+
 async def job_calendar(manager: SchedulerManager) -> None:
     """Scan the next N days for races and create stub records."""
     logger.info("=== Job: Calendar scan starting ===")
@@ -244,8 +259,7 @@ async def job_calendar(manager: SchedulerManager) -> None:
         today = _today_jst()
         days_ahead = settings.SCHED_CALENDAR_DAYS_AHEAD
         date_strings = [
-            (today + timedelta(days=i)).strftime("%Y%m%d")
-            for i in range(days_ahead)
+            (today + timedelta(days=i)).strftime("%Y%m%d") for i in range(days_ahead)
         ]
 
         results = await fetch_race_lists_multi(date_strings)
@@ -254,9 +268,7 @@ async def job_calendar(manager: SchedulerManager) -> None:
         for date_str, races in results.items():
             if not races:
                 continue
-            race_date = date(
-                int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
-            )
+            race_date = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
             count = store_race_stubs(races, race_date)
             total_stubs += count
 
@@ -272,6 +284,7 @@ async def job_calendar(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 # Job: Shutuba (出馬表)
 # ---------------------------------------------------------------------------
+
 
 async def job_shutuba(manager: SchedulerManager) -> None:
     """Fetch shutuba for tomorrow and the day after (stub races only)."""
@@ -296,7 +309,9 @@ async def job_shutuba(manager: SchedulerManager) -> None:
         for target_date in target_dates:
             stub_ids = get_races_without_entries(target_date)
             incomplete_ids = get_races_with_incomplete_entries(target_date)
-            race_ids = list(dict.fromkeys(stub_ids + incomplete_ids))  # dedupe, keep order
+            race_ids = list(
+                dict.fromkeys(stub_ids + incomplete_ids)
+            )  # dedupe, keep order
             if not race_ids:
                 logger.info("No stub/incomplete races for %s, skipping", target_date)
                 continue
@@ -336,7 +351,9 @@ async def job_shutuba(manager: SchedulerManager) -> None:
                     except Exception as e:
                         failed_races += 1
                         logger.warning(
-                            "Failed shutuba for %s: %s", race_id, e,
+                            "Failed shutuba for %s: %s",
+                            race_id,
+                            e,
                             exc_info=True,
                         )
 
@@ -364,7 +381,8 @@ async def job_shutuba(manager: SchedulerManager) -> None:
             if cleaned > 0:
                 logger.info(
                     "Cleaned %d scratched entries for %s",
-                    cleaned, target_date,
+                    cleaned,
+                    target_date,
                 )
 
         # Verification: check for remaining races without entries
@@ -389,6 +407,7 @@ async def job_shutuba(manager: SchedulerManager) -> None:
 # Job: Odds
 # ---------------------------------------------------------------------------
 
+
 async def job_odds(manager: SchedulerManager) -> None:
     """Fetch odds for today's races (skip if no races today)."""
     logger.info("=== Job: Odds fetch starting ===")
@@ -401,9 +420,7 @@ async def job_odds(manager: SchedulerManager) -> None:
 
         if not race_ids:
             logger.info("No races today, skipping odds")
-            manager.record_job_run(
-                "odds", status="skipped", detail="No races today"
-            )
+            manager.record_job_run("odds", status="skipped", detail="No races today")
             return
 
         total_odds = 0
@@ -415,7 +432,10 @@ async def job_odds(manager: SchedulerManager) -> None:
                     odds = await nk.scrape_odds(race_id)
                     if not odds:
                         empty_count += 1
-                        logger.info("Empty odds for %s (API may have returned non-result status)", race_id)
+                        logger.info(
+                            "Empty odds for %s (API may have returned non-result status)",
+                            race_id,
+                        )
                     count = store_odds(odds, race_id)
                     total_odds += count
                 except Exception as e:
@@ -448,6 +468,7 @@ async def job_odds(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 # Job: Results
 # ---------------------------------------------------------------------------
+
 
 def _find_predict_target_date() -> date | None:
     """Find the best date for prediction.
@@ -542,7 +563,9 @@ async def job_predict(manager: SchedulerManager) -> None:
             return
 
         unique_races = len({r["race_id_str"] for r in results})
-        detail = f"{len(results)} predictions across {unique_races} races ({target_date})"
+        detail = (
+            f"{len(results)} predictions across {unique_races} races ({target_date})"
+        )
         logger.info("Prediction complete: %s", detail)
         manager.record_job_run("predict", status="success", detail=detail)
 
@@ -554,6 +577,7 @@ async def job_predict(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 # Job: Results
 # ---------------------------------------------------------------------------
+
 
 async def job_results(manager: SchedulerManager) -> None:
     """Fetch results for today's and recent past races that don't have results yet.
@@ -595,7 +619,9 @@ async def job_results(manager: SchedulerManager) -> None:
                     total_results += count
                 except Exception as e:
                     failed_count += 1
-                    logger.warning("Failed result for %s: %s", race_id, e, exc_info=True)
+                    logger.warning(
+                        "Failed result for %s: %s", race_id, e, exc_info=True
+                    )
 
         detail = f"{total_results} results for {len(race_ids)} races"
         if failed_count > 0:
@@ -658,6 +684,7 @@ async def job_track_condition(manager: SchedulerManager) -> None:
 # Job: Notify prediction
 # ---------------------------------------------------------------------------
 
+
 def _find_latest_predicted_date() -> date | None:
     """Find the most recent date that has predictions in the DB.
 
@@ -665,7 +692,7 @@ def _find_latest_predicted_date() -> date | None:
       1. Nearest future date (today or later) with predictions
       2. Most recent past date with predictions
     """
-    from sqlalchemy import and_, create_engine, select
+    from sqlalchemy import create_engine, select
 
     from app.models import PredictionLog, Race
 
@@ -729,7 +756,8 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
         if target_date is None:
             logger.info("No predictions found in database")
             manager.record_job_run(
-                "notify_prediction", status="skipped",
+                "notify_prediction",
+                status="skipped",
                 detail="No predictions found",
             )
             return
@@ -759,7 +787,8 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
         if not rows:
             logger.info("No predictions for %s", target_date)
             manager.record_job_run(
-                "notify_prediction", status="skipped",
+                "notify_prediction",
+                status="skipped",
                 detail=f"No predictions for {target_date}",
             )
             return
@@ -776,16 +805,22 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
                     "top_horses": [],
                 }
             if len(races_map[rid]["top_horses"]) < 3:
-                races_map[rid]["top_horses"].append({
-                    "name": horse.name,
-                    "score": float(pred.predicted_score or 0),
-                    "odds": str(entry.win_odds or "-"),
-                })
+                races_map[rid]["top_horses"].append(
+                    {
+                        "name": horse.name,
+                        "score": float(pred.predicted_score or 0),
+                        "odds": str(entry.win_odds or "-"),
+                    }
+                )
 
         predictions = list(races_map.values())
         sent = await svc.push_prediction_notification(predictions)
 
-        detail = f"Sent prediction for {len(predictions)} races ({target_date})" if sent else "Send failed"
+        detail = (
+            f"Sent prediction for {len(predictions)} races ({target_date})"
+            if sent
+            else "Send failed"
+        )
         status = "success" if sent else "error"
         logger.info("Notify prediction: %s", detail)
         manager.record_job_run("notify_prediction", status=status, detail=detail)
@@ -798,6 +833,7 @@ async def job_notify_prediction(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 # Job: Notify results
 # ---------------------------------------------------------------------------
+
 
 async def job_notify_results(manager: SchedulerManager) -> None:
     """Send LINE notification with today's race results summary + miss confirmations."""
@@ -837,7 +873,8 @@ async def job_notify_results(manager: SchedulerManager) -> None:
                 logger.info("No race results for %s", today)
                 await engine.dispose()
                 manager.record_job_run(
-                    "notify_results", status="skipped",
+                    "notify_results",
+                    status="skipped",
                     detail=f"No results for {today}",
                 )
                 return
@@ -858,16 +895,18 @@ async def job_notify_results(manager: SchedulerManager) -> None:
                 )
                 top3_rows = (await session.execute(entry_stmt)).all()
 
-                results_data.append({
-                    "race_name": race.race_name or "",
-                    "racecourse_name": race.racecourse_name or "",
-                    "race_number": race.race_number or 0,
-                    "bet_result": "none",
-                    "top3": [
-                        {"position": e.finish_position, "name": h.name}
-                        for e, h in top3_rows
-                    ],
-                })
+                results_data.append(
+                    {
+                        "race_name": race.race_name or "",
+                        "racecourse_name": race.racecourse_name or "",
+                        "race_number": race.race_number or 0,
+                        "bet_result": "none",
+                        "top3": [
+                            {"position": e.finish_position, "name": h.name}
+                            for e, h in top3_rows
+                        ],
+                    }
+                )
 
                 # Check if AI top-1 missed fukusho (not in top 3)
                 pred_stmt = (
@@ -881,12 +920,9 @@ async def job_notify_results(manager: SchedulerManager) -> None:
 
                 if pred_rows:
                     ai_top1_horse_id = pred_rows[0][0].horse_id
-                    finish_stmt = (
-                        select(RaceEntry.finish_position)
-                        .where(
-                            RaceEntry.race_id == race_id_int,
-                            RaceEntry.horse_id == ai_top1_horse_id,
-                        )
+                    finish_stmt = select(RaceEntry.finish_position).where(
+                        RaceEntry.race_id == race_id_int,
+                        RaceEntry.horse_id == ai_top1_horse_id,
                     )
                     finish_pos = (await session.execute(finish_stmt)).scalar()
 
@@ -895,16 +931,19 @@ async def job_notify_results(manager: SchedulerManager) -> None:
                         ai_top3_names = [h.name for _, h in pred_rows[:3]]
                         # Auto-detect reason from race data
                         auto_reason = _auto_detect_miss_reason(race, finish_pos)
-                        miss_candidates.append({
-                            "race_name": f"{race.racecourse_name or ''} {race.race_number or ''}R {race.race_name or ''}",
-                            "race_id": race.race_id,
-                            "ai_top3": ai_top3_names,
-                            "actual_top3": actual_top3_names,
-                            "auto_reason": auto_reason,
-                        })
+                        miss_candidates.append(
+                            {
+                                "race_name": f"{race.racecourse_name or ''} {race.race_number or ''}R {race.race_name or ''}",
+                                "race_id": race.race_id,
+                                "ai_top3": ai_top3_names,
+                                "actual_top3": actual_top3_names,
+                                "auto_reason": auto_reason,
+                            }
+                        )
 
                         # Auto-save to miss_reason_logs
                         from app.models.miss_reason import MissReasonLog
+
                         log = MissReasonLog(
                             race_id=race.id,
                             bet_type="fukusho",
@@ -944,6 +983,7 @@ async def job_notify_results(manager: SchedulerManager) -> None:
 # Job: Weekly report
 # ---------------------------------------------------------------------------
 
+
 async def job_weekly_report(manager: SchedulerManager) -> None:
     """Send weekly performance report via LINE."""
     logger.info("=== Job: Weekly report starting ===")
@@ -968,7 +1008,11 @@ async def job_weekly_report(manager: SchedulerManager) -> None:
 
         sent = await svc.push_weekly_report(report)
 
-        detail = f"Weekly report sent ({report.get('period', '')})" if sent else "Send failed"
+        detail = (
+            f"Weekly report sent ({report.get('period', '')})"
+            if sent
+            else "Send failed"
+        )
         status = "success" if sent else "error"
         logger.info("Weekly report: %s", detail)
         manager.record_job_run("weekly_report", status=status, detail=detail)
@@ -981,6 +1025,7 @@ async def job_weekly_report(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 # Job: Monthly proposal
 # ---------------------------------------------------------------------------
+
 
 async def job_monthly_proposal(manager: SchedulerManager) -> None:
     """Generate and send monthly improvement proposals via LINE."""
@@ -1013,9 +1058,8 @@ async def job_monthly_proposal(manager: SchedulerManager) -> None:
                 return
 
             # Save proposals to DB
-            import datetime
             today = _today_jst()
-            last_month = (today.replace(day=1) - timedelta(days=1))
+            last_month = today.replace(day=1) - timedelta(days=1)
             month_date = last_month.replace(day=1)
 
             saved_proposals = []
@@ -1028,12 +1072,14 @@ async def job_monthly_proposal(manager: SchedulerManager) -> None:
                 )
                 session.add(db_proposal)
                 await session.flush()
-                saved_proposals.append({
-                    "id": str(db_proposal.id),
-                    "proposal_type": p["proposal_type"],
-                    "description": p["description"],
-                    "priority": p.get("priority", 99),
-                })
+                saved_proposals.append(
+                    {
+                        "id": str(db_proposal.id),
+                        "proposal_type": p["proposal_type"],
+                        "description": p["description"],
+                        "priority": p.get("priority", 99),
+                    }
+                )
             await session.commit()
         await engine.dispose()
 
@@ -1053,6 +1099,7 @@ async def job_monthly_proposal(manager: SchedulerManager) -> None:
 # Job: Data integrity check
 # ---------------------------------------------------------------------------
 
+
 async def job_data_integrity_check(manager: SchedulerManager) -> None:
     """Check data completeness for today's races and log warnings.
 
@@ -1064,8 +1111,6 @@ async def job_data_integrity_check(manager: SchedulerManager) -> None:
     """
     logger.info("=== Job: Data integrity check starting ===")
     try:
-        from pathlib import Path
-
         from sqlalchemy import func, select
         from sqlalchemy.orm import Session as SyncSession
 
@@ -1079,9 +1124,12 @@ async def job_data_integrity_check(manager: SchedulerManager) -> None:
 
         with SyncSession(engine) as session:
             # 1. Count races for today
-            total_races = session.execute(
-                select(func.count(Race.id)).where(Race.race_date == today)
-            ).scalar() or 0
+            total_races = (
+                session.execute(
+                    select(func.count(Race.id)).where(Race.race_date == today)
+                ).scalar()
+                or 0
+            )
 
             if total_races == 0:
                 logger.info("No races today, skipping integrity check")
@@ -1092,54 +1140,73 @@ async def job_data_integrity_check(manager: SchedulerManager) -> None:
                 return
 
             # 2. Stub-only races (entries not fetched)
-            stub_count = session.execute(
-                select(func.count(Race.id)).where(
-                    Race.race_date == today, Race.stub_only == True  # noqa: E712
-                )
-            ).scalar() or 0
+            stub_count = (
+                session.execute(
+                    select(func.count(Race.id)).where(
+                        Race.race_date == today,
+                        Race.stub_only == True,  # noqa: E712
+                    )
+                ).scalar()
+                or 0
+            )
             if stub_count > 0:
                 problems.append(f"{stub_count}レースで出馬表未取得(stub_only)")
 
             # 3. Entry count vs head_count mismatch
             mismatch_races = session.execute(
-                select(Race.race_id, Race.racecourse_name, Race.race_number,
-                       Race.head_count, func.count(RaceEntry.id).label("entry_count"))
+                select(
+                    Race.race_id,
+                    Race.racecourse_name,
+                    Race.race_number,
+                    Race.head_count,
+                    func.count(RaceEntry.id).label("entry_count"),
+                )
                 .outerjoin(RaceEntry, RaceEntry.race_id == Race.id)
                 .where(Race.race_date == today, Race.head_count.isnot(None))
                 .group_by(Race.id)
                 .having(func.count(RaceEntry.id) != Race.head_count)
             ).all()
             if mismatch_races:
-                problems.append(
-                    f"{len(mismatch_races)}レースでentries≠head_count"
-                )
+                problems.append(f"{len(mismatch_races)}レースでentries≠head_count")
                 for r in mismatch_races[:5]:
                     logger.warning(
                         "Entry mismatch: %s %sR entries=%d head_count=%d",
-                        r.racecourse_name, r.race_number, r.entry_count, r.head_count,
+                        r.racecourse_name,
+                        r.race_number,
+                        r.entry_count,
+                        r.head_count,
                     )
 
             # 4. Races without predictions
-            races_with_preds = session.execute(
-                select(func.count(func.distinct(PredictionLog.race_id)))
-                .join(Race, PredictionLog.race_id == Race.id)
-                .where(Race.race_date == today)
-            ).scalar() or 0
+            races_with_preds = (
+                session.execute(
+                    select(func.count(func.distinct(PredictionLog.race_id)))
+                    .join(Race, PredictionLog.race_id == Race.id)
+                    .where(Race.race_date == today)
+                ).scalar()
+                or 0
+            )
             races_without_preds = total_races - races_with_preds
             if races_without_preds > 0:
-                problems.append(f"{races_without_preds}/{total_races}レースでAI予想なし")
+                problems.append(
+                    f"{races_without_preds}/{total_races}レースでAI予想なし"
+                )
 
             # 5. Cleanup + check entries with null post_position (ghost entries)
             from app.scraper.store import cleanup_scratched_entries
+
             cleaned = cleanup_scratched_entries(today)
             if cleaned > 0:
                 logger.info("Integrity check cleaned %d ghost entries", cleaned)
 
-            ghost_entries = session.execute(
-                select(func.count(RaceEntry.id))
-                .join(Race, RaceEntry.race_id == Race.id)
-                .where(Race.race_date == today, RaceEntry.post_position.is_(None))
-            ).scalar() or 0
+            ghost_entries = (
+                session.execute(
+                    select(func.count(RaceEntry.id))
+                    .join(Race, RaceEntry.race_id == Race.id)
+                    .where(Race.race_date == today, RaceEntry.post_position.is_(None))
+                ).scalar()
+                or 0
+            )
             if ghost_entries > 0:
                 problems.append(f"馬番なしエントリ{ghost_entries}件（重複の可能性）")
 
@@ -1171,6 +1238,7 @@ async def job_data_integrity_check(manager: SchedulerManager) -> None:
 # ---------------------------------------------------------------------------
 # Job: JRA-VAN sync reminder (方式C: weekly home-PC JV-Link sync)
 # ---------------------------------------------------------------------------
+
 
 async def job_jravan_reminder(manager: SchedulerManager) -> None:
     """Send a weekly LINE reminder to run the home-PC JRA-VAN (JV-Link) sync.

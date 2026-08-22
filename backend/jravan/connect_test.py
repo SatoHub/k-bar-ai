@@ -30,12 +30,12 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-SOFTWARE_ID = "KBARAI/0.1"        # JVInit に渡すソフト識別子（個人利用は任意）
-TEST_DATASPEC = "RACE"            # 取得データ種別
-TEST_OPTION = 2                   # 1=通常 2=今週分(軽い) 3=ダイアログ無し 4=セットアップ(重い)
-FROM_DAYS_AGO = 7                 # 取得開始 = 今日からこの日数前（軽量化のため直近のみ）
-MAX_RECORDS = 5                   # 通常時に表示するレコード数（--read で20件）
-BUFFER_SIZE = 120000              # JVRead 用バッファ容量（0だとアクセス違反で落ちる）
+SOFTWARE_ID = "KBARAI/0.1"  # JVInit に渡すソフト識別子（個人利用は任意）
+TEST_DATASPEC = "RACE"  # 取得データ種別
+TEST_OPTION = 2  # 1=通常 2=今週分(軽い) 3=ダイアログ無し 4=セットアップ(重い)
+FROM_DAYS_AGO = 7  # 取得開始 = 今日からこの日数前（軽量化のため直近のみ）
+MAX_RECORDS = 5  # 通常時に表示するレコード数（--read で20件）
+BUFFER_SIZE = 120000  # JVRead 用バッファ容量（0だとアクセス違反で落ちる）
 
 
 def load_service_key() -> str:
@@ -83,21 +83,27 @@ def main() -> int:
     if key:
         rc = jv.JVSetServiceKey(key)
         if rc == 0:
-            print(f"[3/5] JVSetServiceKey -> 0 (キー再設定OK)")
+            print("[3/5] JVSetServiceKey -> 0 (キー再設定OK)")
         else:
-            print(f"[3/5] JVSetServiceKey -> {rc} (警告: 「JV-Link設定」で登録済みのキーを使用して続行)")
+            print(
+                f"[3/5] JVSetServiceKey -> {rc} (警告: 「JV-Link設定」で登録済みのキーを使用して続行)"
+            )
     else:
         print("[3/5] JVSetServiceKey -> skip (.env未設定。登録済みキーを使用)")
 
     # --- 実データ取得で検証（これが本当の疎通確認） ---
     fromtime = (datetime.now() - timedelta(days=FROM_DAYS_AGO)).strftime("%Y%m%d000000")
-    print(f"[4/5] JVOpen(dataspec={TEST_DATASPEC}, from={fromtime}, option={TEST_OPTION}) ...")
+    print(
+        f"[4/5] JVOpen(dataspec={TEST_DATASPEC}, from={fromtime}, option={TEST_OPTION}) ..."
+    )
     open_ret = jv.JVOpen(TEST_DATASPEC, fromtime, TEST_OPTION)
     if isinstance(open_ret, (tuple, list)):
         rc = open_ret[0]
         readcount = open_ret[1] if len(open_ret) > 1 else "?"
         downloadcount = open_ret[2] if len(open_ret) > 2 else "?"
-        print(f"      JVOpen -> rc={rc}, readcount={readcount}, downloadcount={downloadcount}")
+        print(
+            f"      JVOpen -> rc={rc}, readcount={readcount}, downloadcount={downloadcount}"
+        )
     else:
         rc = open_ret
         print(f"      JVOpen -> {rc}")
@@ -134,7 +140,7 @@ def main() -> int:
             print(f"      [WARN] JVRead code={read_rc}")
             break
         rec_type = buf[:2] if isinstance(buf, str) else "?"
-        head = (buf[:50] if isinstance(buf, str) else str(buf)[:50])
+        head = buf[:50] if isinstance(buf, str) else str(buf)[:50]
         print(f"      rec#{shown + 1} type={rec_type} ({read_rc}B) {head}")
         shown += 1
 

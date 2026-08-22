@@ -27,8 +27,12 @@ class TrackConditionDetail(Base):
     cushion_value: Mapped[float | None] = mapped_column(Float)  # 芝クッション値
     turf_moisture_goal: Mapped[float | None] = mapped_column(Float)  # 芝ゴール前含水率%
     turf_moisture_4c: Mapped[float | None] = mapped_column(Float)  # 芝4コーナー含水率%
-    dirt_moisture_goal: Mapped[float | None] = mapped_column(Float)  # ダートゴール前含水率%
-    dirt_moisture_4c: Mapped[float | None] = mapped_column(Float)  # ダート4コーナー含水率%
+    dirt_moisture_goal: Mapped[float | None] = mapped_column(
+        Float
+    )  # ダートゴール前含水率%
+    dirt_moisture_4c: Mapped[float | None] = mapped_column(
+        Float
+    )  # ダート4コーナー含水率%
     scraped_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.datetime.utcnow
     )

@@ -108,11 +108,7 @@ async def get_race_results(
         base_filter.append(Race.racecourse_name == racecourse)
 
     # Race list (no pagination — one day is at most ~36 races)
-    races_q = (
-        select(Race)
-        .where(*base_filter)
-        .order_by(Race.race_number)
-    )
+    races_q = select(Race).where(*base_filter).order_by(Race.race_number)
     result = await session.execute(races_q)
     races = list(result.scalars().all())
 
@@ -140,7 +136,9 @@ async def get_race_results(
             {
                 "finish_position": entry.finish_position,
                 "horse_name": horse_name,
-                "win_odds": float(entry.win_odds) if entry.win_odds is not None else None,
+                "win_odds": float(entry.win_odds)
+                if entry.win_odds is not None
+                else None,
                 "win_favorite": entry.win_favorite,
             }
         )
@@ -165,12 +163,9 @@ async def get_race_results(
         )
 
     # Bulk-load actual finish positions (all entries for hit computation)
-    entries_q = (
-        select(RaceEntry)
-        .where(
-            RaceEntry.race_id.in_(race_ids),
-            RaceEntry.finish_position.isnot(None),
-        )
+    entries_q = select(RaceEntry).where(
+        RaceEntry.race_id.in_(race_ids),
+        RaceEntry.finish_position.isnot(None),
     )
     entries_result = await session.execute(entries_q)
     finish_by_race: dict[str, dict[str, int]] = {}
@@ -238,8 +233,6 @@ def _compute_hits(
 
     # AI predicted top 3 horse_ids
     ai_top = [p["horse_id"] for p in preds[:3]]
-    # Actual finish positions for AI predicted horses
-    ai_finishes = [finishes.get(hid) for hid in ai_top]
 
     # Actual top-3 horse_ids
     actual_top3_ids = {hid for hid, pos in finishes.items() if pos <= 3}
@@ -258,16 +251,10 @@ def _compute_hits(
     fukusho_hit = ai_top[0] in actual_top3_ids
 
     # 馬連: AI上位2頭が実上位2着に含まれる（順不同）
-    umaren_hit = (
-        has2
-        and ai_top[0] in actual_top2_ids
-        and ai_top[1] in actual_top2_ids
-    )
+    umaren_hit = has2 and ai_top[0] in actual_top2_ids and ai_top[1] in actual_top2_ids
 
     # 馬単: AI1位=実1着 かつ AI2位=実2着
-    umatan_hit = (
-        has2 and ai_top[0] in actual_1st and ai_top[1] in actual_2nd
-    )
+    umatan_hit = has2 and ai_top[0] in actual_1st and ai_top[1] in actual_2nd
 
     # ワイド: AI上位3頭のうち2頭以上が実3着以内
     if has3:
@@ -312,10 +299,12 @@ async def get_results_summary(
 
     base_filter = [Race.id.in_(pred_race_ids_q)]
     if year and month:
-        base_filter.extend([
-            func.extract("year", Race.race_date) == year,
-            func.extract("month", Race.race_date) == month,
-        ])
+        base_filter.extend(
+            [
+                func.extract("year", Race.race_date) == year,
+                func.extract("month", Race.race_date) == month,
+            ]
+        )
 
     if racecourse:
         base_filter.append(Race.racecourse_name == racecourse)
@@ -362,17 +351,12 @@ async def get_results_summary(
     preds_by_race: dict[str, list[dict]] = {}
     for pred in pred_result.scalars().all():
         rid = str(pred.race_id)
-        preds_by_race.setdefault(rid, []).append(
-            {"horse_id": str(pred.horse_id)}
-        )
+        preds_by_race.setdefault(rid, []).append({"horse_id": str(pred.horse_id)})
 
     # Finish positions
-    entries_q = (
-        select(RaceEntry)
-        .where(
-            RaceEntry.race_id.in_(race_ids),
-            RaceEntry.finish_position.isnot(None),
-        )
+    entries_q = select(RaceEntry).where(
+        RaceEntry.race_id.in_(race_ids),
+        RaceEntry.finish_position.isnot(None),
     )
     entries_result = await session.execute(entries_q)
     finish_by_race: dict[str, dict[str, int]] = {}
@@ -381,12 +365,19 @@ async def get_results_summary(
         rid = str(entry.race_id)
         finish_by_race.setdefault(rid, {})[str(entry.horse_id)] = entry.finish_position
         if entry.win_odds is not None:
-            odds_by_race.setdefault(rid, {})[str(entry.horse_id)] = float(entry.win_odds)
+            odds_by_race.setdefault(rid, {})[str(entry.horse_id)] = float(
+                entry.win_odds
+            )
 
     # Aggregate hits
     bet_types = [
-        "tansho_hit", "fukusho_hit", "umaren_hit", "umatan_hit",
-        "wide_hit", "sanrenpuku_hit", "sanrentan_hit",
+        "tansho_hit",
+        "fukusho_hit",
+        "umaren_hit",
+        "umatan_hit",
+        "wide_hit",
+        "sanrenpuku_hit",
+        "sanrentan_hit",
     ]
     counters = {bt: 0 for bt in bet_types}
     total_races = 0
@@ -435,7 +426,9 @@ async def get_results_summary(
         hit_rates[label] = {
             "hits": counters[bt],
             "total": total_races,
-            "rate": round(counters[bt] / total_races * 100, 1) if total_races > 0 else 0.0,
+            "rate": round(counters[bt] / total_races * 100, 1)
+            if total_races > 0
+            else 0.0,
         }
 
     period = f"{year}-{month:02d}" if year and month else "全期間"
@@ -463,7 +456,12 @@ def _empty_hit_rates() -> dict:
     return {
         key: {"hits": 0, "total": 0, "rate": 0.0}
         for key in [
-            "tansho", "fukusho", "umaren", "umatan",
-            "wide", "sanrenpuku", "sanrentan",
+            "tansho",
+            "fukusho",
+            "umaren",
+            "umatan",
+            "wide",
+            "sanrenpuku",
+            "sanrentan",
         ]
     }

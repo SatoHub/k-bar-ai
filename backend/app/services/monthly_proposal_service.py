@@ -25,6 +25,7 @@ async def generate_monthly_proposals(session: AsyncSession) -> list[dict]:
     """
     from zoneinfo import ZoneInfo
     from app.config import settings
+
     tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
     today = datetime.datetime.now(tz).date()
     # Previous month range
@@ -39,42 +40,51 @@ async def generate_monthly_proposals(session: AsyncSession) -> list[dict]:
     proposals: list[dict] = []
 
     # --- 1. Check prediction log growth ---
-    last_month_count = await session.scalar(
-        select(func.count(PredictionLog.id)).where(
-            PredictionLog.created_at >= datetime.datetime.combine(last_month_start, datetime.time.min),
-            PredictionLog.created_at < datetime.datetime.combine(first_of_this_month, datetime.time.min),
+    last_month_count = (
+        await session.scalar(
+            select(func.count(PredictionLog.id)).where(
+                PredictionLog.created_at
+                >= datetime.datetime.combine(last_month_start, datetime.time.min),
+                PredictionLog.created_at
+                < datetime.datetime.combine(first_of_this_month, datetime.time.min),
+            )
         )
-    ) or 0
+        or 0
+    )
 
-    prev_month_count = await session.scalar(
-        select(func.count(PredictionLog.id)).where(
-            PredictionLog.created_at >= datetime.datetime.combine(two_months_start, datetime.time.min),
-            PredictionLog.created_at < datetime.datetime.combine(last_month_start, datetime.time.min),
+    prev_month_count = (
+        await session.scalar(
+            select(func.count(PredictionLog.id)).where(
+                PredictionLog.created_at
+                >= datetime.datetime.combine(two_months_start, datetime.time.min),
+                PredictionLog.created_at
+                < datetime.datetime.combine(last_month_start, datetime.time.min),
+            )
         )
-    ) or 0
+        or 0
+    )
 
     if last_month_count > 500 and last_month_count > prev_month_count * 1.2:
-        proposals.append({
-            "proposal_type": "retrain",
-            "description": (
-                f"先月の予想ログが{last_month_count}件に達しました"
-                f"（前月比+{last_month_count - prev_month_count}件）。"
-                "データ量が増えたのでモデル再学習を推奨します。"
-            ),
-            "priority": 1,
-        })
+        proposals.append(
+            {
+                "proposal_type": "retrain",
+                "description": (
+                    f"先月の予想ログが{last_month_count}件に達しました"
+                    f"（前月比+{last_month_count - prev_month_count}件）。"
+                    "データ量が増えたのでモデル再学習を推奨します。"
+                ),
+                "priority": 1,
+            }
+        )
 
     # --- 2. Surface-specific hit rate analysis ---
     from app.services.results_service import _compute_hits
 
     for surface_name in ["芝", "ダート"]:
-        race_ids_q = (
-            select(Race.id)
-            .where(
-                Race.race_date >= last_month_start,
-                Race.race_date <= last_month_end,
-                Race.surface == surface_name,
-            )
+        race_ids_q = select(Race.id).where(
+            Race.race_date >= last_month_start,
+            Race.race_date <= last_month_end,
+            Race.surface == surface_name,
         )
         race_ids_result = await session.execute(race_ids_q)
         race_ids = [r[0] for r in race_ids_result.all()]
@@ -92,23 +102,20 @@ async def generate_monthly_proposals(session: AsyncSession) -> list[dict]:
         preds_by_race: dict[str, list[dict]] = {}
         for pred in pred_result.scalars().all():
             rid = str(pred.race_id)
-            preds_by_race.setdefault(rid, []).append(
-                {"horse_id": str(pred.horse_id)}
-            )
+            preds_by_race.setdefault(rid, []).append({"horse_id": str(pred.horse_id)})
 
         # Finish positions
-        entries_q = (
-            select(RaceEntry)
-            .where(
-                RaceEntry.race_id.in_(race_ids),
-                RaceEntry.finish_position.isnot(None),
-            )
+        entries_q = select(RaceEntry).where(
+            RaceEntry.race_id.in_(race_ids),
+            RaceEntry.finish_position.isnot(None),
         )
         entries_result = await session.execute(entries_q)
         finish_by_race: dict[str, dict[str, int]] = {}
         for entry in entries_result.scalars().all():
             rid = str(entry.race_id)
-            finish_by_race.setdefault(rid, {})[str(entry.horse_id)] = entry.finish_position
+            finish_by_race.setdefault(rid, {})[str(entry.horse_id)] = (
+                entry.finish_position
+            )
 
         # Compute fukusho (複勝) hit rate for this surface
         fukusho_hits = 0
@@ -126,19 +133,25 @@ async def generate_monthly_proposals(session: AsyncSession) -> list[dict]:
         if total_races >= 10:
             rate = round(fukusho_hits / total_races * 100, 1)
             if rate < 30:
-                proposals.append({
-                    "proposal_type": "feature_engineering",
-                    "description": (
-                        f"{surface_name}の複勝的中率が{rate}%と低い状態です"
-                        f"（{total_races}レース中{fukusho_hits}的中）。"
-                        f"{surface_name}向けの特徴量追加を検討してください。"
-                    ),
-                    "priority": 2,
-                })
+                proposals.append(
+                    {
+                        "proposal_type": "feature_engineering",
+                        "description": (
+                            f"{surface_name}の複勝的中率が{rate}%と低い状態です"
+                            f"（{total_races}レース中{fukusho_hits}的中）。"
+                            f"{surface_name}向けの特徴量追加を検討してください。"
+                        ),
+                        "priority": 2,
+                    }
+                )
 
     # --- 3. Bet type trend analysis (compare with two months ago) ---
     # This is simplified - check if any bet type improved significantly
-    for bt_label, bt_key in [("単勝", "tansho_hit"), ("複勝", "fukusho_hit"), ("ワイド", "wide_hit")]:
+    for bt_label, bt_key in [
+        ("単勝", "tansho_hit"),
+        ("複勝", "fukusho_hit"),
+        ("ワイド", "wide_hit"),
+    ]:
         last_rate = await _compute_monthly_hit_rate(
             session, bt_key, last_month_start, last_month_end
         )
@@ -147,14 +160,16 @@ async def generate_monthly_proposals(session: AsyncSession) -> list[dict]:
         )
         if last_rate is not None and prev_rate is not None:
             if last_rate > prev_rate + 5:
-                proposals.append({
-                    "proposal_type": "positive_trend",
-                    "description": (
-                        f"{bt_label}の的中率が{prev_rate:.1f}% → {last_rate:.1f}%に改善しました。"
-                        "この馬券種の推奨度を上げることを検討してください。"
-                    ),
-                    "priority": 3,
-                })
+                proposals.append(
+                    {
+                        "proposal_type": "positive_trend",
+                        "description": (
+                            f"{bt_label}の的中率が{prev_rate:.1f}% → {last_rate:.1f}%に改善しました。"
+                            "この馬券種の推奨度を上げることを検討してください。"
+                        ),
+                        "priority": 3,
+                    }
+                )
 
     # Sort by priority
     proposals.sort(key=lambda p: p["priority"])
@@ -170,9 +185,8 @@ async def _compute_monthly_hit_rate(
     """Compute hit rate for a specific bet type within a date range."""
     from app.services.results_service import _compute_hits
 
-    race_q = (
-        select(Race.id)
-        .where(Race.race_date >= start_date, Race.race_date <= end_date)
+    race_q = select(Race.id).where(
+        Race.race_date >= start_date, Race.race_date <= end_date
     )
     race_result = await session.execute(race_q)
     race_ids = [r[0] for r in race_result.all()]
@@ -191,12 +205,9 @@ async def _compute_monthly_hit_rate(
         rid = str(pred.race_id)
         preds_by_race.setdefault(rid, []).append({"horse_id": str(pred.horse_id)})
 
-    entries_q = (
-        select(RaceEntry)
-        .where(
-            RaceEntry.race_id.in_(race_ids),
-            RaceEntry.finish_position.isnot(None),
-        )
+    entries_q = select(RaceEntry).where(
+        RaceEntry.race_id.in_(race_ids),
+        RaceEntry.finish_position.isnot(None),
     )
     entries_result = await session.execute(entries_q)
     finish_by_race: dict[str, dict[str, int]] = {}

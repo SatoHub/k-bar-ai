@@ -26,7 +26,9 @@ MIN_FAV = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 
 
 def get(path):
-    req = urllib.request.Request(f"{BASE}{path}", headers={"Authorization": f"Basic {AUTH}"})
+    req = urllib.request.Request(
+        f"{BASE}{path}", headers={"Authorization": f"Basic {AUTH}"}
+    )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
 
@@ -35,11 +37,16 @@ async def main():
     race = get(f"/races/{RID}")
     surface = race.get("surface")
     rdate = datetime.date.fromisoformat(race["race_date"])
-    print(f"=== {race['racecourse_name']} {race['race_name']} ({surface}{race['distance_m']}m) ===")
+    print(
+        f"=== {race['racecourse_name']} {race['race_name']} ({surface}{race['distance_m']}m) ==="
+    )
 
     targets = [
-        e for e in race["entries"]
-        if e.get("win_favorite") and e["win_favorite"] >= MIN_FAV and e["horse"].get("netkeiba_id")
+        e
+        for e in race["entries"]
+        if e.get("win_favorite")
+        and e["win_favorite"] >= MIN_FAV
+        and e["horse"].get("netkeiba_id")
     ]
     targets.sort(key=lambda e: e["win_favorite"])
 
@@ -59,8 +66,10 @@ async def main():
     print(f"\n人気{MIN_FAV}番手以下 {len(results)}頭を分析:\n")
     for e, s, ncareer in results:
         mark = "🔴穴" if s["is_sleeper"] else "  "
-        print(f"{mark} {e['win_favorite']:>2}人気 {e['horse']['name']:<12} "
-              f"穴度{s['score']:.2f} (全{ncareer}走) {s['reason']}")
+        print(
+            f"{mark} {e['win_favorite']:>2}人気 {e['horse']['name']:<12} "
+            f"穴度{s['score']:.2f} (全{ncareer}走) {s['reason']}"
+        )
 
 
 if __name__ == "__main__":
