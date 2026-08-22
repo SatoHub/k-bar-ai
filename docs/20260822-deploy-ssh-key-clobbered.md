@@ -66,22 +66,63 @@ github-actions-deploy@shitagoshirae (ED25519)
 github-actions-deploy@k-bar-ai      (ED25519)
 ```
 
-## 併せて見つかったセキュリティ上の懸念（未対応）
+## 併せて見つかったセキュリティ問題 → 同日に対応完了
 
-VPS の sshd 設定:
+### 発見時の状態
 
 ```
 permitrootlogin        yes
 passwordauthentication yes
 ```
 
-**root へのパスワードログインがインターネットから可能な状態**で、認証ログには
-複数の海外IPから継続的な総当たり攻撃が記録されていた（すべて失敗しているが試行は継続中）。
+**root へのパスワードログインがインターネットから可能**で、認証ログには複数の海外IPから
+継続的な総当たり攻撃（`Failed password for root`）が記録されていた。
+サーバー上には本番DB・`.env`・**2プロジェクト分のデプロイ鍵**があり、
+実質「パスワード強度だけが唯一の防御」という状態だった。
 
-推奨対応（未実施・要判断）:
-- `PasswordAuthentication no`（公開鍵のみに限定）
-- `PermitRootLogin prohibit-password` または `no`
-- fail2ban の導入
+### 設定の構造（ここが分かりにくい）
 
-⚠️ 設定変更前に**必ず別セッションで公開鍵ログインできることを確認**すること。
-誤るとVPSから締め出される。
+`/etc/ssh/sshd_config` の**12行目**に `Include /etc/ssh/sshd_config.d/*.conf` があり、
+**sshd は同じキーワードなら最初に読んだ値を採用する**。したがって drop-in が本体より強い。
+読み込み順はファイル名のアルファベット順:
+
+| ファイル | 内容 | 効果 |
+|---|---|---|
+| `00-passwd.conf` | `PasswordAuthentication yes` | **これが勝っていた**（2026-06-30 作成） |
+| `100-allowsshrsa.conf` | `PubkeyAcceptedAlgorithms=+ssh-rsa` | RSA鍵を許可（手元の鍵がRSAのため**触らない**） |
+| `50-cloud-init.conf` | `PasswordAuthentication no` | 後読みのため**無視されていた** |
+| `sshd_config:42` | `PermitRootLogin yes` | drop-inに定義が無いため有効だった |
+
+### 対応
+
+`00-passwd.conf`（最初に読まれる＝最も強い）を書き換えた:
+
+```
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+```
+
+`prohibit-password` は**公開鍵でのroot接続は維持**する。`no` にすると自分も入れなくなる。
+`100-allowsshrsa.conf` は手元のRSA鍵が使えなくなる恐れがあるため**変更していない**。
+
+### 安全手順（締め出し防止）
+
+1. `/root/ssh-backup-<日時>/` に `sshd_config` と `sshd_config.d/` をバックアップ
+2. `sshd -t` で構文検証（reload 前）
+3. **5分後に自動ロールバックする `nohup` ジョブを仕掛けてから** `systemctl reload ssh`
+   （`/root/.ssh-change-confirmed` が無ければ元に戻す）
+4. 新規接続で鍵ログイン成功を確認 → 確認ファイルを作成してロールバック解除
+
+`reload` は既存接続を切らない。`restart` は不要。
+
+### 検証結果
+
+- 鍵ログイン: ✅ 成功
+- パスワード認証: ✅ `Permission denied (publickey)` で拒否
+- **CI デプロイ: ✅ 実際に再実行して成功**（3分47秒）。deploy ユーザは公開鍵認証のため影響なし
+- 本番: ✅ HEAD `576a352` / `/api/v1/health` = ok
+- 攻撃ログ: 対策後5分間の `Failed password` = **0件**。
+  攻撃者は `Connection closed by authenticating user root ... [preauth]` で
+  **パスワードを試すことすらできなくなった**
+
+fail2ban はパスワード認証が無効な以上、総当たりが原理的に成立しないため見送り。
