@@ -103,19 +103,27 @@ node .claude/hooks/guard.test.mjs
 ⚠️ **master への push は GitHub Actions 経由で本番VPSへ自動デプロイされる。**
 push はユーザーが明示的に指示した時だけ行うこと。
 
-## クロスモデルレビュー（codex）を回す対象
+## 追加レビューを回すパス（このリポジトリ固有）
 
-通常のレビューは Claude の `code-reviewer`（1〜2分）。
-**以下に触れる変更だけ**、差分が1行でも `codex review` も回す（約9分・バックグラウンド実行）。
-起動オプションは `~/.claude/CLAUDE.md` §12.10 を参照（`-c` 2つを省くと誤ったコミットをレビューする）。
+通常の変更は Claude の `code-reviewer` のみ（Medium 以上で自動・1〜2分）。
+**以下のパスに触れたら、差分が1行でも**追加のレビュアーを回す。
+判定表の全体は `~/.claude/CLAUDE.md` §12.3。
 
-| カテゴリ | 該当パス |
-|---|---|
-| 本番・デプロイ | `.github/workflows/`、`docker/docker-compose.prod.yml`、`backend/app/scheduler/` |
-| DBスキーマ | `backend/alembic/versions/`、`backend/app/models/` |
-| 金銭に関わる計算 | `backend/app/services/bet_suggestion*.py`、`hedge_service.py`、`backend/app/ml/` |
-| 安全機構 | `.claude/hooks/`、`.claude/settings.json` |
-| 認証・外部公開 | `backend/app/api/` の認証まわり、nginx 設定 |
+| カテゴリ | 該当パス | 追加で回すもの |
+|---|---|---|
+| **金銭に関わる計算** | `backend/app/services/bet_suggestion*.py`、`hedge_service.py`、`bet_service.py`、`backend/app/ml/` | `security-reviewer` ＋ `codex` |
+| 認証・外部公開 | `backend/app/api/` の認証まわり、`docker/nginx/`、`.htpasswd` 関連 | `security-reviewer` ＋ `codex` |
+| 外部入力・スクレイピング | `backend/app/scraper/` | `security-reviewer` |
+| DBスキーマ | `backend/alembic/versions/`、`backend/app/models/` | `security-reviewer` ＋ `codex` |
+| 本番・デプロイ | `.github/workflows/`、`docker/docker-compose.prod.yml`、`backend/app/scheduler/` | `codex` |
+| 安全機構 | `.claude/hooks/`、`.claude/settings.json` | `codex` |
+| テストを触った時 | `backend/tests/`、`frontend/e2e/` | `test-reviewer` |
+
+- 金銭計算を `security-reviewer` に含めるのは、**計算ミスがそのまま金銭損失になる**ため。
+- `codex` は約9分かかるので**バックグラウンド実行**する。起動オプションは `~/.claude/CLAUDE.md` §12.10
+  （`-c` 2つを省くと**別コミットをレビューして誤った合格を返す**）。
+- 完了報告に `レビュー: code-reviewer=... / test-reviewer=... / security-reviewer=...` の
+  1行を**必ず**含める。
 
 ## Project Rules
 
