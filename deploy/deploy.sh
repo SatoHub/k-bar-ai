@@ -56,8 +56,11 @@ else
     echo "Backend: FAILED (check logs: docker compose --env-file .env -f docker/docker-compose.prod.yml logs backend)"
 fi
 
-# frontend は node:22-alpine で curl が無いため busybox wget を使う
-if docker exec kbar-frontend wget -q -O /dev/null http://localhost:3000/ 2>/dev/null; then
+# ⚠️ frontend は localhost で叩けない。Next.js standalone は HOSTNAME(コンテナID)の
+# 解決先＝コンテナIPにのみ bind するため、127.0.0.1:3000 は Connection refused になる
+# (実測: listen は 172.18.0.x:3000 のみ)。backend コンテナから nginx と同じ名前で
+# 引くことで、実際に nginx が到達できるかを検証できる。backend には curl が入っている。
+if docker exec kbar-backend curl -sf -o /dev/null http://frontend:3000/ 2>/dev/null; then
     echo "Frontend: OK"
 else
     echo "Frontend: FAILED (check logs: docker compose --env-file .env -f docker/docker-compose.prod.yml logs frontend)"

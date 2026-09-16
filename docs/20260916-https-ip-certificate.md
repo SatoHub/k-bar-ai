@@ -224,6 +224,18 @@ reload を判断していたが、これは以下の理由で捨てた。
   （このリポジトリの他のスクリプトも `bash deploy/xxx.sh` で呼ぶ規約）。
   手元での `systemctl start` は手動 chmod した +x が残っていたため通ってしまい、
   **テストが通ることと本番で通ることが一致しなかった**典型例。
+- ⚠️ **frontend コンテナは `localhost:3000` で叩けない。**
+  Next.js standalone は `HOSTNAME`(コンテナID)の解決先＝**コンテナIPにのみ bind** する
+  （実測: listen は `172.18.0.x:3000` のみで `127.0.0.1:3000` は Connection refused）。
+  ヘルスチェックは **backend コンテナから `http://frontend:3000/`** を叩く
+  （nginx と同じ名前解決なので、実際に nginx が到達できるかの検証になる）。
+  backend イメージには curl が入っている。
+- ⚠️ **デプロイ直後の 502 は stale upstream とは限らない。**
+  今回 `/api/v1/health` が 502 になったが、nginx のエラーログの upstream IP は
+  **現在の backend の IP** で、エラーは `connect() failed (111: Connection refused)` だった
+  ＝**backend の起動待ち**であって古い IP を掴んでいたわけではない。
+  `no live upstreams` や `host not found` なら stale、`Connection refused` なら起動待ち。
+  **ログの upstream IP を実際のコンテナ IP と突き合わせてから判断すること。**
 - ⚠️ **`chmod +x deploy/*.sh` をワイルドカードで叩かない。**
   転送対象外のスクリプトにも実行ビットが付き、VPS の git が
   `mode change 100644 => 100755` の差分として検知して作業ツリーが汚れる
@@ -286,12 +298,32 @@ reload を判断していたが、これは以下の理由で捨てた。
    併せて旧パスワードを他用途に使い回していないか確認する。
    - ハッシュ形式も未確認。再生成時は `htpasswd -B`（bcrypt）にする。
      既定の MD5-apr1 は現代の基準では弱い
-2. **`deploy.yml`（GitHub Actions）に nginx のリロードが無い。**
-   `nginx.conf` は bind mount なので、内容だけ変わっても `up -d` ではコンテナが再作成されず
-   **新しい設定が読み込まれない**（＝設定変更したつもりで旧設定のまま動き続ける）。
-   `deploy/deploy.sh`（手動経路）には `nginx -t` → `reload` を入れたが、
-   Actions 側は未対応。⚠️ `.github/workflows/` の push には `workflow` スコープ付きトークンが
-   必要（`~/.claude/CLAUDE.md` / memory 参照）なので、実施時は手順に注意
+2. 🔴 **`deploy.yml`（GitHub Actions）が `deploy/deploy.sh` を呼ばず、独自のインラインスクリプトを
+   実行している。** そのため `deploy.sh` に入れた対策が自動デプロイでは一切効かない。
+   **2026-09-16 に実害が出た**（下記のとおり systemd unit が更新されず `203/EXEC` になった）。
+
+   Actions 側に欠けているもの:
+   - **systemd unit の設置**。unit は `/etc/systemd/system/` にあり `git pull` では更新されない。
+     unit を変更しても自動デプロイでは反映されず、手動で `install` するまで古いまま動く
+   - **nginx のリロード**。`nginx.conf` は bind mount なので内容だけ変わっても
+     `up -d` ではコンテナが再作成されず新しい設定が読み込まれない
+
+   提案する `deploy.yml` への追記（`up -d` の後）:
+
+   ```yaml
+   sudo install -m 644 deploy/systemd/kbar-certbot-renew.service /etc/systemd/system/
+   sudo install -m 644 deploy/systemd/kbar-certbot-renew.timer /etc/systemd/system/
+   sudo install -m 644 deploy/systemd/kbar-certbot-renew-failed.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now kbar-certbot-renew.timer
+   docker exec kbar-nginx nginx -t && docker exec kbar-nginx nginx -s reload
+   ```
+
+   ⚠️ `.github/workflows/` の push には `workflow` スコープ付きトークンが必要
+   （`~/.claude/CLAUDE.md` / memory 参照）。ローカルの既定トークンでは push が拒否される。
+
+   **より本質的な対案**: Actions のインラインスクリプトをやめ、`bash deploy/deploy.sh` を
+   呼ぶだけにする。そうすれば手動経路と自動経路が同じコードを通り、この種のズレが構造的に消える。
 3. **更新の独立監視が無い。** 安全網は `certbot-renew.sh` が実行された時にしか動かない。
    timer 自体が止まれば安全網も止まる（`OnFailure=` はスクリプト異常終了を拾うが、
    timer が disable された場合は何も鳴らない）。backend の scheduler に日次の
