@@ -1,0 +1,14 @@
+[Unit]
+Description=K-Bar AI: 証明書更新を8時間ごとに実行(160時間証明書のため高頻度)
+
+[Timer]
+# 有効期間160時間。certbot は有効期間10日以下の証明書を
+# 「残り1/2(=80時間)」で更新するため、8時間間隔なら更新窓の中で約10回試行できる。
+OnCalendar=*-*-* 02,10,18:17:00
+# Let's Encrypt の負荷分散ガイドラインに従い実行時刻を散らす
+RandomizedDelaySec=20m
+# VPS 停止で取り逃した実行を復帰後に回収する
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -51,3 +51,13 @@ backups/
 
 # Basic auth password file
 docker/nginx/.htpasswd
+# 退避・確認のために作られる控えも含めて弾く（認証ハッシュを含むため）
+docker/nginx/.htpasswd.*
+
+# TLS 秘密鍵・証明書。このリポジトリは public なので予防的に弾く。
+# 通常は Docker の named volume 内にあり作業ツリーには現れないが、
+# 確認や退避で手元に置いた時の `git add -A` 事故を防ぐ。
+*.pem
+*.key
+privkey*
+letsencrypt/

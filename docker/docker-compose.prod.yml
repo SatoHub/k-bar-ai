@@ -54,15 +54,21 @@ services:
       - backend
 
   nginx:
-    image: nginx:alpine
+    # http2 on は nginx 1.25.1 以降が必須。certbot をバージョン固定しているのと
+    # 同じ理由でここも固定する(稼働実績のある 1.29 系に合わせている)。
+    image: nginx:1.29-alpine
     container_name: kbar-nginx
     restart: always
-    mem_limit: 64m
+    # TLS 終端とセッションキャッシュ(shared:SSL:10m)が乗るため 64m から引き上げた。
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 通常は本番設定。証明書が未取得の新規/再構築サーバーでは
+      # .env に NGINX_CONF=./nginx/nginx.bootstrap.conf を置いて
+      # TLS なしで起動する(証明書が無いと nginx は起動できないため)。
+      - ${NGINX_CONF:-./nginx/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
       - certbot-webroot:/var/www/certbot:ro
       - certbot-certs:/etc/letsencrypt:ro
@@ -70,7 +76,30 @@ services:
       - backend
       - frontend
 
+  # Let's Encrypt の IPアドレス証明書(shortlived プロファイル / 有効期間160時間)を扱う。
+  # IPアドレス宛の証明書は webroot プラグインで certbot 5.4 以上が必要なため、
+  # Ubuntu 24.04 の apt 版(2.9.0)ではなくバージョン固定のコンテナを使う。
+  #
+  # 常駐させない: profiles を付けているので `up -d` では起動しない
+  # (起動しても即終了するだけなので、常駐させると再起動ループになる)。
+  # 実行は `docker compose --env-file .env -f docker/docker-compose.prod.yml run --rm certbot <args>`。
+  # 定期更新は deploy/certbot-renew.sh を systemd timer が呼ぶ。
+  certbot:
+    image: certbot/certbot:v5.8.0
+    # container_name は付けない。`run --rm` 専用なので固定名は衝突リスクだけ増やす
+    # (前回の run が残っていると name already in use で更新が失敗しうる)。
+    profiles: ["certbot"]
+    volumes:
+      # nginx 側は :ro でマウントしている。書き込むのは certbot だけ。
+      - certbot-certs:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+      - certbot-lib:/var/lib/letsencrypt
+      # 更新ログは必ず永続化する。コンテナ揮発だと更新失敗の原因調査ができない。
+      - certbot-logs:/var/log/letsencrypt
+
 volumes:
   pgdata:
   certbot-webroot:
   certbot-certs:
+  certbot-lib:
+  certbot-logs:

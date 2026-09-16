@@ -1,2 +1,8 @@
 # Shell scripts must use LF so they run correctly under bash on any host.
 *.sh text eol=lf
+
+# nginx 等の設定ファイルも LF 固定。
+# core.autocrlf=true ではコミット時に LF へ正規化されるので index に CRLF は入らないが、
+# autocrlf=false の環境でエディタが CRLF を書くと VPS 上のファイルと byte 不一致になり、
+# デプロイ時の差分検知が狂う。その予防。現在の対象は docker/nginx/*.conf のみ。
+*.conf text eol=lf

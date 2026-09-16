@@ -1,0 +1,14 @@
+[Unit]
+Description=K-Bar AI: Let's Encrypt IPアドレス証明書(160時間)の更新
+Documentation=file:/opt/kbar/deploy/certbot-renew.sh
+Documentation=file:/opt/kbar/docs/20260916-https-ip-certificate.md
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kbar/deploy/certbot-renew.sh
+# スクリプト自体が起動できない/異常終了した場合の最後の砦。
+# certbot-renew.sh 内の LINE 通知は backend コンテナに依存するため、
+# Docker ごと落ちている状況では通知できない。それを補う。
+OnFailure=kbar-certbot-renew-failed.service

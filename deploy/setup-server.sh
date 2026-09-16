@@ -38,8 +38,14 @@ echo "=== 6. Create app directory ==="
 mkdir -p /opt/kbar
 chown deploy:deploy /opt/kbar
 
-echo "=== 7. Install certbot + apache2-utils (for htpasswd) ==="
-apt-get install -y certbot apache2-utils
+echo "=== 7. Install apache2-utils (for htpasswd) ==="
+# certbot は apt 版を入れない。
+# Ubuntu 24.04 の apt 版は 2.9.0 で、IPアドレス証明書の webroot 対応(5.4以上)を
+# 満たさない。さらに apt 版が入れる certbot.timer が /usr/bin/certbot を呼ぶため、
+# 5.x が書いた renewal 設定(preferred_profile = shortlived)を解釈できず
+# 更新が静かに失敗する。証明書は compose の certbot サービス
+# (certbot/certbot:v5.8.0) を使う。詳細は docs/20260916-https-ip-certificate.md
+apt-get install -y apache2-utils
 
 echo ""
 echo "============================================"
@@ -50,5 +56,16 @@ echo "    2. Clone repo to /opt/kbar"
 echo "    3. Copy .env.production to /opt/kbar/.env"
 echo "    4. Create Basic auth password:"
 echo "       htpasswd -c /opt/kbar/docker/nginx/.htpasswd admin"
-echo "    5. Run: bash deploy/deploy.sh"
+echo ""
+echo "    5. HTTPS のブートストラップ（証明書が無い状態では nginx が起動できないため"
+echo "       この順序でしか立ち上がらない。詳細は docs/20260916-https-ip-certificate.md）:"
+echo "       a) echo 'NGINX_CONF=./nginx/nginx.bootstrap.conf' >> /opt/kbar/.env"
+echo "       b) bash deploy/deploy.sh          # TLS なしで起動する"
+echo "       c) cd /opt/kbar && docker compose --env-file .env \\"
+echo "            -f docker/docker-compose.prod.yml run --rm certbot certonly \\"
+echo "            --non-interactive --agree-tos --register-unsafely-without-email \\"
+echo "            --preferred-profile shortlived --webroot -w /var/www/certbot \\"
+echo "            --ip-address YOUR_IP --cert-name kbar"
+echo "       d) .env から NGINX_CONF の行を削除する"
+echo "       e) bash deploy/deploy.sh          # 本番設定(TLS あり)で再作成される"
 echo "============================================"
