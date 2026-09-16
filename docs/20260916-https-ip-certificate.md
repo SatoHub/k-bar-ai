@@ -215,6 +215,19 @@ reload を判断していたが、これは以下の理由で捨てた。
 - **`.gitattributes` に `*.conf text eol=lf` を追加した。** `core.autocrlf=true` では commit 時に
   LF 正規化されるので index に CRLF は入らないが、autocrlf=false の環境でエディタが CRLF を
   書くと VPS 上のファイルと byte 不一致になる。その予防
+- 🔴 **Windows の git は実行ビットを記録しない。systemd の `ExecStart` に
+  スクリプトを直接書いてはいけない。**
+  ローカル(Windows)で `chmod +x` してコミットしても index には `100644` が入る。
+  Linux 側の checkout で実行ビットが落ち、`ExecStart=/opt/kbar/deploy/xxx.sh` は
+  **`203/EXEC` で起動できなくなる**。160時間証明書では気づかないまま約6.7日で停止する。
+  → `ExecStart=/bin/bash /opt/kbar/deploy/xxx.sh` と明示する
+  （このリポジトリの他のスクリプトも `bash deploy/xxx.sh` で呼ぶ規約）。
+  手元での `systemctl start` は手動 chmod した +x が残っていたため通ってしまい、
+  **テストが通ることと本番で通ることが一致しなかった**典型例。
+- ⚠️ **`chmod +x deploy/*.sh` をワイルドカードで叩かない。**
+  転送対象外のスクリプトにも実行ビットが付き、VPS の git が
+  `mode change 100644 => 100755` の差分として検知して作業ツリーが汚れる
+  （内容は無変更なのに `git status` が空にならず、デプロイ前の整合確認で混乱する）。
 - 🔴 **`.gitattributes` の `eol=lf` は git 経由の checkout しか守らない。**
   今回 Windows の作業コピーが CRLF だった `deploy.sh` / `setup-server.sh` を
   **tar で直接 VPS へ転送してしまい、CRLF のシェルスクリプトを置いた**（88行・71行）。

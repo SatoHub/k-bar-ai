@@ -7,7 +7,12 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/kbar/deploy/certbot-renew.sh
+# 明示的に /bin/bash 経由で起動する。スクリプトを直接 ExecStart に書くと
+# 実行ビットが落ちた瞬間に 203/EXEC で起動できなくなる。
+# Windows の git は実行ビットを記録しないため、このリポジトリでは
+# 実行ビットが落ちた状態で checkout される経路が実在する。
+# 他の deploy/*.sh も `bash deploy/xxx.sh` で呼ぶ規約になっている。
+ExecStart=/bin/bash /opt/kbar/deploy/certbot-renew.sh
 # スクリプト自体が起動できない/異常終了した場合の最後の砦。
 # certbot-renew.sh 内の LINE 通知は backend コンテナに依存するため、
 # Docker ごと落ちている状況では通知できない。それを補う。

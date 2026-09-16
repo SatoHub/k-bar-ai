@@ -7,4 +7,5 @@ Description=K-Bar AI: 証明書更新ユニットが失敗したことを通知�
 
 [Service]
 Type=oneshot
-ExecStart=/opt/kbar/deploy/line-notify.sh "🔴 K-Bar AI: 証明書更新ユニット(kbar-certbot-renew.service)が異常終了しました。160時間で証明書が失効するため、VPSで journalctl -u kbar-certbot-renew -n 50 を確認してください。"
+# 実行ビットに依存しないよう /bin/bash 経由で起動する(本体ユニットと同じ理由)
+ExecStart=/bin/bash /opt/kbar/deploy/line-notify.sh "🔴 K-Bar AI: 証明書更新ユニット(kbar-certbot-renew.service)が異常終了しました。160時間で証明書が失効するため、VPSで journalctl -u kbar-certbot-renew -n 50 を確認してください。"
