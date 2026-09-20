@@ -94,6 +94,29 @@ served_notafter() {
         | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2
 }
 
+# 期待する notAfter が配信されるまで待つ。最後に観測した値を stdout に出す。
+# 一致したら 0、待っても一致しなければ 1 を返す。
+#
+# ⚠️ なぜ待つ必要があるか（2026-09-20 に実際に誤報を出した）:
+#   `nginx -s reload` は非同期で、master が新ワーカーを起こしても
+#   古いワーカーは既存接続を捌き終えるまで生き残り、その間は
+#   **メモリ上の古い証明書を返し続ける**。reload 直後に読みに行くと
+#   更新が成功していても「変わっていない」と誤判定して 🔴 を送ってしまう。
+#   実測では reload から 6 秒後でもまだ旧証明書が返っていた。
+wait_for_served() {
+    local expect="$1" served="" i
+    for i in $(seq 1 30); do          # 2秒 × 30 = 最大60秒
+        served=$(served_notafter)
+        if [ -n "$served" ] && [ "$served" = "$expect" ]; then
+            printf '%s' "$served"
+            return 0
+        fi
+        sleep 2
+    done
+    printf '%s' "$served"
+    return 1
+}
+
 # ディスク上(certbot が書いた)証明書の notAfter を取る
 disk_notafter() {
     compose run --rm -T --entrypoint openssl certbot \
@@ -125,11 +148,12 @@ log "ディスク上: ${DISK_END:-取得不可} / 配信中: ${SERVED_END:-取�
 if [ -n "$DISK_END" ] && [ -n "$SERVED_END" ] && [ "$DISK_END" != "$SERVED_END" ]; then
     log "配信中の証明書がディスク上と異なる。reload する。"
     if reload_nginx; then
-        SERVED_END=$(served_notafter)
-        if [ "$DISK_END" = "$SERVED_END" ]; then
+        # 古いワーカーが退役するまで待つ。即座に読むと誤報になる(wait_for_served 参照)
+        if SERVED_END=$(wait_for_served "$DISK_END"); then
+            log "反映を確認した(期限 $SERVED_END)"
             notify "✅ K-Bar AI: HTTPS証明書を更新しました(期限 $SERVED_END)。"
         else
-            notify "🔴 K-Bar AI: reload したのに配信中の証明書が変わりません(ディスク $DISK_END / 配信 ${SERVED_END:-取得不可})。至急確認してください。"
+            notify "🔴 K-Bar AI: reload 後60秒待っても配信中の証明書が変わりません(ディスク $DISK_END / 配信 ${SERVED_END:-取得不可})。至急確認してください。"
         fi
     else
         notify "🔴 K-Bar AI: 証明書は更新できましたが nginx のリロードに失敗しました。古い証明書が配信され続けます。至急確認してください。"
