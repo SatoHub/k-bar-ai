@@ -41,6 +41,9 @@ LIVE_CERT="/etc/letsencrypt/live/${CERT_NAME}/fullchain.pem"
 # 動作確認用に上書きできる: WARN_HOURS=200 bash deploy/certbot-renew.sh
 WARN_HOURS="${WARN_HOURS:-24}"
 
+# reload 後に新しい証明書が配信されるまで待つ上限(秒)。実時間で打ち切る。
+WAIT_SECONDS="${WAIT_SECONDS:-60}"
+
 # echo は certbot 出力が -n / -e で始まるとオプションとして食うため使わない
 log() { printf '%s\n' "$*" | logger -t "$TAG"; }
 
@@ -88,10 +91,11 @@ PY
     fi
 }
 
-# 443 で実際に配信されている証明書の notAfter を取る
+# 443 で実際に配信されている証明書の notAfter を取る。
+# tr -d '\r': $(...) は末尾 LF は剥がすが CR は残す。CR が混ざると恒久的な不一致になる。
 served_notafter() {
     echo | timeout 15 openssl s_client -connect 127.0.0.1:443 2>/dev/null \
-        | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2
+        | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2 | tr -d '\r'
 }
 
 # 期待する notAfter が配信されるまで待つ。最後に観測した値を stdout に出す。
@@ -103,24 +107,40 @@ served_notafter() {
 #   **メモリ上の古い証明書を返し続ける**。reload 直後に読みに行くと
 #   更新が成功していても「変わっていない」と誤判定して 🔴 を送ってしまう。
 #   実測では reload から 6 秒後でもまだ旧証明書が返っていた。
+#
+# ⚠️ 回数ではなく実時間で打ち切ること。served_notafter は `timeout 15` を持つため、
+#   プローブがストールすると「30回 × (15秒 + sleep 2秒)」で約8.5分かかり、
+#   異常時の 🔴 通知がその分遅れる（codex レビュー指摘）。
 wait_for_served() {
-    local expect="$1" served="" i
-    for i in $(seq 1 30); do          # 2秒 × 30 = 最大60秒
+    local expect="$1" served="" deadline
+    deadline=$(( $(date +%s) + WAIT_SECONDS ))
+    while :; do
         served=$(served_notafter)
         if [ -n "$served" ] && [ "$served" = "$expect" ]; then
             printf '%s' "$served"
             return 0
         fi
+        # 最終プローブの後に無駄な sleep を挟まず、実時間で打ち切る
+        [ "$(date +%s)" -ge "$deadline" ] && break
         sleep 2
     done
     printf '%s' "$served"
+    # 「TLS に到達できない(空)」と「到達できるが別の証明書」は原因も対処も違うので
+    # 戻り値で区別する。2=観測不能 / 1=不一致
+    [ -z "$served" ] && return 2
     return 1
 }
 
-# ディスク上(certbot が書いた)証明書の notAfter を取る
+# ディスク上(certbot が書いた)証明書の notAfter を取る。
+# ⚠️ ディスク側と配信側は**同じ openssl** で読むこと。
+#   以前は certbot イメージ内の openssl で読んでいたが、それだとホスト側の
+#   openssl との間で出力書式が食い違った瞬間に恒久的な不一致になり、
+#   「証明書は正常なのに8時間ごとに reload → 待機 → 🔴」を永久に繰り返す
+#   （code-reviewer 指摘）。nginx コンテナから cat してホストの openssl で読む。
+#   コンテナ起動が不要になる分こちらの方が速い。
 disk_notafter() {
-    compose run --rm -T --entrypoint openssl certbot \
-        x509 -enddate -noout -in "$LIVE_CERT" 2>/dev/null | cut -d= -f2
+    docker exec "$NGINX_CONTAINER" cat "$LIVE_CERT" 2>/dev/null \
+        | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2 | tr -d '\r'
 }
 
 reload_nginx() {
@@ -149,14 +169,25 @@ if [ -n "$DISK_END" ] && [ -n "$SERVED_END" ] && [ "$DISK_END" != "$SERVED_END" 
     log "配信中の証明書がディスク上と異なる。reload する。"
     if reload_nginx; then
         # 古いワーカーが退役するまで待つ。即座に読むと誤報になる(wait_for_served 参照)
-        if SERVED_END=$(wait_for_served "$DISK_END"); then
-            log "反映を確認した(期限 $SERVED_END)"
-            notify "✅ K-Bar AI: HTTPS証明書を更新しました(期限 $SERVED_END)。"
-        else
-            notify "🔴 K-Bar AI: reload 後60秒待っても配信中の証明書が変わりません(ディスク $DISK_END / 配信 ${SERVED_END:-取得不可})。至急確認してください。"
-        fi
+        SERVED_END=$(wait_for_served "$DISK_END"); WAIT_RC=$?
+        case "$WAIT_RC" in
+            0)
+                log "反映を確認した(期限 $SERVED_END)"
+                notify "✅ K-Bar AI: HTTPS証明書を更新しました(期限 $SERVED_END)。"
+                ;;
+            2)
+                # 到達できない＝HTTPS が落ちている。不一致とは原因も対処も違う
+                notify "🔴 K-Bar AI: reload 後 ${WAIT_SECONDS}秒待っても 443 から証明書を読み取れません。HTTPSが停止している可能性があります。至急確認してください。"
+                exit 1
+                ;;
+            *)
+                notify "🔴 K-Bar AI: reload 後 ${WAIT_SECONDS}秒待っても配信中の証明書が変わりません(ディスク $DISK_END / 配信 ${SERVED_END:-取得不可})。至急確認してください。"
+                exit 1
+                ;;
+        esac
     else
         notify "🔴 K-Bar AI: 証明書は更新できましたが nginx のリロードに失敗しました。古い証明書が配信され続けます。至急確認してください。"
+        exit 1
     fi
 fi
 
