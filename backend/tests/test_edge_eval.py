@@ -122,9 +122,91 @@ class TestCalibration:
         assert res["bins"][0]["gap"] == pytest.approx(0.5)
         assert res["brier"] == pytest.approx(0.25)
 
+    def test_ece_is_weighted_by_bin_count_not_a_plain_average(self):
+        """
+        🔴 ECE はビンごとの**件数で重み付け**する。単純平均にしてはいけない。
+
+        件数が偏っている時、単純平均は「件数の少ないビンの大きなずれ」を
+        過大評価し、キャリブレーションが実際より悪く見える（あるいはその逆）。
+        等頻度ビンだと件数がほぼ揃うので、**同値を大量に混ぜて意図的に偏らせる**。
+        これが無いと重み付けを外す実装変更を誰も検出できない
+        （test-reviewer の mutation 7 が素通りした穴）。
+        """
+        rng = np.random.default_rng(21)
+        spread = rng.uniform(0.0, 0.5, size=5_000)  # ばらけた側
+        clumped = np.full(5_000, 0.9)  # 同値の塊 → 1ビンに集まる
+        p = np.concatenate([spread, clumped])
+        y = np.concatenate([np.zeros(5_000), np.ones(5_000)])
+
+        res = calibration(p, y, n_bins=10)
+        counts = np.array([b["count"] for b in res["bins"]], dtype="float64")
+        gaps = np.array([abs(b["gap"]) for b in res["bins"]], dtype="float64")
+
+        assert counts.max() / counts.min() > 3, (
+            "前提: ビンの件数が偏っていること。偏っていないと"
+            "重み付けの有無で差が出ず、検査にならない"
+        )
+        weighted = float((counts * gaps).sum() / counts.sum())
+        plain = float(gaps.mean())
+        assert abs(weighted - plain) > 0.02, (
+            "前提: 重み付き平均と単純平均がはっきり違うデータであること"
+        )
+        assert res["ece"] == pytest.approx(weighted, abs=1e-9)
+        assert res["ece"] != pytest.approx(plain, abs=0.01)
+
+    def test_constant_prediction_model_is_not_calibration_ok(self):
+        """
+        🔴 定数を吐くモデルを「キャリブレーションOK」にしてはいけない。
+
+        ビンが1つしか作れないと ECE は「全体平均の予測 vs 全体の実測率」に
+        なり、ほぼ 0 になる。それを OK として EV 判定の前提を通すと
+        **識別力ゼロのモデルが検証済みとして扱われる**
+        （security-reviewer が実測で検出: ECE=0.0 / calibration_ok=True）。
+        """
+        n = 10_000
+        p = np.full(n, 1 / 13)
+        rng = np.random.default_rng(41)
+        y = (rng.uniform(size=n) < 1 / 13).astype(float)
+        res = calibration(p, y)
+        assert res["n_bins_effective"] == 1
+        assert res["ece"] < 0.02, "前提: ECE 自体は小さく出てしまうこと"
+        assert res["degenerate"] is True
+        assert res["calibration_ok"] is False
+
+    def test_predictions_collapsed_into_few_bins_are_not_calibration_ok(self):
+        """
+        逆向きの誤差が打ち消し合って ECE が過小に出る経路を塞ぐ。
+
+        予測の 90% が同値だと分位境界が潰れて1ビンになり、
+        「3%しか勝たない群」と「90%勝つ群」が同じビンで相殺される
+        （code-reviewer が実測: 報告 ECE 0.0104 / 本来 0.0466）。
+        """
+        p = np.concatenate([np.full(9_050, 0.05), np.full(950, 0.60)])
+        y = np.concatenate(
+            [
+                (np.arange(9_050) % 100 < 3).astype(float),  # 約3%
+                (np.arange(950) % 10 < 9).astype(float),  # 約90%
+            ]
+        )
+        res = calibration(p, y, n_bins=10)
+        assert res["n_bins_effective"] * 2 < 10, "前提: ビンが潰れること"
+        assert res["degenerate"] is True
+        assert res["calibration_ok"] is False
+
+    def test_well_spread_predictions_are_not_flagged_degenerate(self):
+        """正常なケースを degenerate と誤判定しない（偽陽性の確認）。"""
+        rng = np.random.default_rng(42)
+        p = rng.uniform(0.01, 0.4, size=20_000)
+        y = (rng.uniform(size=20_000) < p).astype(float)
+        res = calibration(p, y)
+        assert res["n_bins_effective"] == 10
+        assert res["degenerate"] is False
+        assert res["calibration_ok"] is True
+
     def test_empty_input_returns_none_not_crash(self):
         res = calibration(np.array([]), np.array([]))
         assert res["n"] == 0 and res["ece"] is None
+        assert res["calibration_ok"] is False
 
     def test_nan_rows_are_dropped(self):
         res = calibration(np.array([0.5, np.nan, 0.5]), np.array([1.0, 1.0, np.nan]))
@@ -184,6 +266,87 @@ class TestRoiMath:
         r = roi_summary(pd.Series([], dtype=float), pd.Series([], dtype=float))
         assert r["bets"] == 0 and r["verdict"] == VERDICT_UNDECIDABLE
 
+    def test_zero_bet_result_has_the_same_keys_as_a_normal_result(self):
+        """
+        🔴 0点でもキーの形を変えない。
+
+        以前 `ci95` を落としていたため、呼び出し側が**全評価を終えた後に**
+        TypeError で落ち、JSON も残らなかった（codex と security-reviewer が
+        独立に指摘）。形が同じなら呼び出し側が壊れない。
+        """
+        empty = roi_summary(pd.Series([], dtype=float), pd.Series([], dtype=float))
+        normal = roi_summary(
+            pd.Series([2.0] * 10),
+            pd.Series([1.0] * 5 + [0.0] * 5),
+            bootstrap_samples=50,
+        )
+        assert set(empty) == set(normal)
+        assert empty["ci95"] == (None, None)
+
+    def test_length_mismatch_raises_instead_of_silently_returning_nan(self):
+        """
+        長さが違う入力は例外にする。黙って空になるのが最悪。
+
+        pandas は index でアライメントするため、放置すると母集団が
+        静かに 0 になる（code-reviewer が実測で指摘）。
+        """
+        with pytest.raises(ValueError, match="長さが一致しない"):
+            roi_summary(pd.Series([2.0, 3.0]), pd.Series([1.0]))
+        with pytest.raises(ValueError, match="長さが一致しない"):
+            market_implied_prob(pd.Series([2.0, 3.0]), pd.Series(["A"]))
+
+    def test_mismatched_index_does_not_produce_all_nan(self):
+        """index がずれていても位置で対応させる（全 NaN にならない）。"""
+        odds = pd.Series([2.0, 4.0], index=[100, 200])
+        race = pd.Series(["A", "A"], index=[0, 1])
+        p = market_implied_prob(odds, race)
+        assert p.notna().all()
+        assert p.sum() == pytest.approx(1.0)
+        # 戻り値は呼び出し側の index を保つ（df への代入が壊れないため）
+        assert list(p.index) == [100, 200]
+
+    def test_required_bets_rule_is_equivalent_to_the_normal_approximation(self):
+        """
+        事前登録 §1-3 の「必要Nを逆算して満たさなければ点数不足」が、
+        正規近似の半幅 0.10 と**厳密に同値**であることを固定する。
+
+        `need = (Z95·sd/0.1)^2` なので `n >= need` ⟺ `Z95·sd/√n <= 0.1`。
+        判定にこの条件を足したのは、bootstrap CI が退化して不当に狭くなった時に
+        正規近似側で弾くため（code-reviewer M3）。
+
+        ⚠️ **実測では、この条件だけが効くケースは見つからなかった。**
+           「bootstrap 半幅 ≤ 0.10 なのに n < need」になる入力を
+           オッズ帯・点数・的中率の 75 通りで探して 0 件
+           （security-reviewer も 200 試行で 0 件）。
+           したがってこれは**厳しい側への文書整合であって、
+           挙動が変わることを実証できたわけではない**。
+        """
+        rng = np.random.default_rng(51)
+        for n, hit in [(600, 0.05), (2_000, 0.2), (5_000, 0.1)]:
+            odds = rng.uniform(1.5, 20.0, size=n)
+            won = (rng.uniform(size=n) < hit).astype(float)
+            r = roi_summary(pd.Series(odds), pd.Series(won), bootstrap_samples=1_500)
+            normal_half = 1.959964 * r["payoff_sd"] / np.sqrt(n)
+            assert (r["bets"] >= r["required_bets_for_target"]) == (normal_half <= 0.10)
+
+    def test_precise_but_clearly_losing_sample_is_verdict_no_not_undecidable(self):
+        """
+        当たりが極端に少なくても、ROI が精度よく 0 付近と分かるなら
+        「有意に赤字」と断言してよい（判定不能に逃げない）。
+
+        600点で1的中・オッズ3.0 なら ROI 0.5%。bootstrap も正規近似も
+        半幅 0.01 未満で一致する（実測）。統計的に妥当な断定。
+        """
+        r = roi_summary(
+            pd.Series([3.0] * 600),
+            pd.Series([1.0] + [0.0] * 599),
+            bootstrap_samples=3_000,
+        )
+        assert r["bets"] >= MIN_BETS
+        assert r["ci_halfwidth"] < 0.05
+        assert r["bets"] >= r["required_bets_for_target"]
+        assert r["verdict"] == VERDICT_NO
+
     def test_index_misalignment_does_not_shuffle_pairs(self):
         """odds と winner の index がずれていても行の対応が壊れないこと。"""
         odds = pd.Series([5.0, 2.0], index=[10, 11])
@@ -231,14 +394,67 @@ class TestVerdictGuardsAgainstSmallSamples:
         assert r["roi"] == pytest.approx(1.5)
         assert r["verdict"] == VERDICT_YES
 
-    def test_roi_just_above_one_with_wide_ci_is_not_yes(self):
-        """ROI が 1.00 をわずかに超えても CI がまたげば「見込みあり」と言わない。"""
-        rng = np.random.default_rng(9)
-        odds = rng.uniform(2.0, 4.0, size=3_000)
-        won = (rng.uniform(size=3_000) < (1.02 / odds)).astype(float)
+    def test_roi_above_one_but_ci_straddles_breakeven_is_not_yes(self):
+        """
+        ROI が 1.00 を超えていても CI が 1.00 をまたげば「見込みあり」と言わない。
+
+        ⚠️ 以前この検査は `if r["ci95"][0] <= 1.0:` の中に assert を置いていたため、
+           **その条件が一度も成立せず完全な無検査だった**（test-reviewer が
+           mutation testing で検出。実測で ci_lo=1.0153 だった）。
+           条件分岐を使わず、CI が確実にまたぐデータで無条件に検査する。
+        """
+        rng = np.random.default_rng(11)
+        n = 6_000
+        # 低オッズ帯なら精度要件（CI半幅≤0.10）は満たせる。真の ROI を
+        # ちょうど 1.00 に置くことで CI が損益分岐をまたぐ状況を作る。
+        odds = rng.uniform(1.3, 2.0, size=n)
+        won = (rng.uniform(size=n) < (1.0 / odds)).astype(float)
         r = roi_summary(pd.Series(odds), pd.Series(won), bootstrap_samples=3_000)
-        if r["ci95"][0] <= 1.0:
-            assert r["verdict"] != VERDICT_YES
+
+        assert r["ci_halfwidth"] <= 0.10, "前提: 精度要件は満たしていること"
+        assert r["ci95"][0] < 1.0 < r["ci95"][1], "前提: CI が 1.00 をまたぐこと"
+        assert r["verdict"] == VERDICT_UNDECIDABLE
+        assert "またぐ" in r["verdict_reason"]
+
+    def test_precision_is_checked_before_profitability(self):
+        """
+        🔴 判定の**順序**を固定する。点数不足の判定は「儲かってそうか」より先。
+
+        これが無いと「精度チェックより先に CI 下限を見る」実装に変えても
+        どのテストも落ちない（test-reviewer の mutation 3 が素通りした穴）。
+        少数サンプルで偶然 CI 下限が 1.00 を超えるケースを意図的に作る。
+        """
+        # 50点・オッズ3.0・40勝 → ROI 2.4。CI 下限は 1.00 をはるかに超える。
+        odds = pd.Series([3.0] * 50)
+        won = pd.Series([1.0] * 40 + [0.0] * 10)
+        r = roi_summary(odds, won, bootstrap_samples=3_000)
+
+        assert r["bets"] < MIN_BETS, "前提: 点数が下限未満であること"
+        assert r["ci95"][0] > BREAKEVEN_ROI, (
+            "前提: CI 下限が損益分岐を超えていること"
+            "（超えていないと順序の検査にならない）"
+        )
+        assert r["verdict"] == VERDICT_UNDECIDABLE
+        assert "点数不足" in r["verdict_reason"]
+
+    def test_wide_ci_beats_profitability_even_when_bets_are_enough(self):
+        """
+        点数が下限を満たしていても、精度不足なら「見込みあり」より優先される。
+
+        上のテストは `n < MIN_BETS` の枝を守る。こちらは CI 半幅の枝を守る。
+        """
+        rng = np.random.default_rng(12)
+        n = 1_000
+        odds = rng.uniform(50, 120, size=n)
+        # 儲かるように当選を多めに作る（ROI は 1.00 を大きく超える）
+        won = (rng.uniform(size=n) < 0.05).astype(float)
+        r = roi_summary(pd.Series(odds), pd.Series(won), bootstrap_samples=3_000)
+
+        assert r["bets"] >= MIN_BETS, "前提: 点数は下限を満たすこと"
+        assert r["ci95"][0] > BREAKEVEN_ROI, "前提: CI 下限が損益分岐を超えること"
+        assert r["ci_halfwidth"] > 0.10, "前提: 精度要件を満たさないこと"
+        assert r["verdict"] == VERDICT_UNDECIDABLE
+        assert "精度不足" in r["verdict_reason"]
 
 
 class TestSampleSizeArithmetic:
@@ -283,6 +499,24 @@ class TestBootstrap:
         one_shot = bootstrap_ci(p, samples=600, seed=1, chunk=600)
         chunked = bootstrap_ci(p, samples=600, seed=1, chunk=7)
         assert one_shot == pytest.approx(chunked, abs=0.05)
+
+    def test_confidence_level_is_95_percent_not_something_narrower(self):
+        """
+        🔴 CI の**信頼水準そのもの**を固定する。
+
+        「n が増えると狭くなる」「平均を挟む」だけでは、percentile を
+        0.25/0.75 に変えられても検出できない（test-reviewer が、既存の検出は
+        境界値の偶然によるものだと指摘）。大標本では bootstrap CI の半幅は
+        正規近似 `1.96 × sd / √n` に近づくので、それと突き合わせる。
+        """
+        rng = np.random.default_rng(31)
+        n = 30_000
+        payoffs = np.where(rng.uniform(size=n) < 0.25, 4.0, 0.0)
+        lo, hi = bootstrap_ci(payoffs, samples=4_000, seed=5)
+        half = (hi - lo) / 2.0
+        theory = 1.959964 * payoffs.std(ddof=1) / np.sqrt(n)
+        # 50%区間なら理論値の約34%になるため、この許容では通らない
+        assert half == pytest.approx(theory, rel=0.10)
 
     def test_empty_returns_nan(self):
         lo, hi = bootstrap_ci(np.array([]))

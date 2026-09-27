@@ -55,13 +55,18 @@ def load_oddsfree(version: str = "v1.0.0") -> dict:
 
 
 def train_oddsfree_model(
-    version: str = "v1.0.0",
+    version: str,
     cutoff_year: int = DEFAULT_CUTOFF_YEAR,
     df: pd.DataFrame | None = None,
     target_column: str = TARGET_COLUMN,
 ) -> dict:
     """
     Train the odds-independent model and save the artifact.
+
+    ⚠️ ``version`` は**必須**。既定値 ``"v1.0.0"`` を残していたため、
+       `train_oddsfree_model(target_column="is_win")` のような呼び方で
+       **本番名の `v1.0.0_oddsfree.joblib` を別の目的変数で上書き**できた
+       （security-reviewer L-7）。呼び出し側に必ず名前を書かせる。
 
     Args:
         df: optional pre-built feature matrix (build_feature_matrix is
