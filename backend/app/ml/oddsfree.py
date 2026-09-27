@@ -58,13 +58,18 @@ def train_oddsfree_model(
     version: str = "v1.0.0",
     cutoff_year: int = DEFAULT_CUTOFF_YEAR,
     df: pd.DataFrame | None = None,
+    target_column: str = TARGET_COLUMN,
 ) -> dict:
     """
-    Train the odds-independent place model and save the artifact.
+    Train the odds-independent model and save the artifact.
 
     Args:
         df: optional pre-built feature matrix (build_feature_matrix is
             expensive, so the backtest reuses one already in memory).
+        target_column: ``"is_place"``（既定, 3着内）or ``"is_win"``（1着）。
+            **単勝オッズと突き合わせて期待値を判定するなら ``"is_win"`` が必要。**
+            複勝の払戻オッズは DB に無いため、``is_place`` の確率は
+            金銭的な期待値計算には使えない（順位付けにしか使えない）。
 
     Returns a dict with the trained artifact and test metrics.
     """
@@ -72,23 +77,44 @@ def train_oddsfree_model(
         logger.info("Building feature matrix...")
         df = build_feature_matrix()
 
+    if target_column not in df.columns:
+        raise KeyError(
+            f"target_column '{target_column}' が特徴量行列に無い "
+            f"(利用可能: is_win / is_place)"
+        )
+
     feats = oddsfree_feature_columns()
     cat_cols = [c for c in CATEGORICAL_COLUMNS if c in df.columns]
 
     train = df[df["race_date"].dt.year < cutoff_year]
     test = df[df["race_date"].dt.year >= cutoff_year]
     logger.info(
-        "oddsfree train=%d test=%d (cutoff=%d)", len(train), len(test), cutoff_year
+        "oddsfree train=%d test=%d (cutoff=%d, target=%s)",
+        len(train),
+        len(test),
+        cutoff_year,
+        target_column,
     )
 
     X_train = train[feats].copy()
-    y_train = train[TARGET_COLUMN].values.astype(np.float64)
+    y_train = train[target_column].values.astype(np.float64)
     X_test = test[feats].copy()
-    y_test = test[TARGET_COLUMN].values.astype(np.float64)
+    y_test = test[target_column].values.astype(np.float64)
 
-    val_cutoff = int(len(X_train) * 0.9)
-    X_tr, y_tr = X_train.iloc[:val_cutoff], y_train[:val_cutoff]
-    X_val, y_val = X_train.iloc[val_cutoff:], y_train[val_cutoff:]
+    # 検証分割は**日付**で切る。
+    # ⚠️ 以前は `iloc[:90%]` の位置ベースだった。build_feature_matrix が
+    #    返す並び順に依存するため、コメントの意図（時系列の後ろ10%）とは
+    #    異なる集合になりうる。trainer.py で同じ欠陥を修正済み（2026-09-27）。
+    val_start = train["race_date"].quantile(0.9)
+    val_mask = (train["race_date"] >= val_start).to_numpy()
+    X_tr, y_tr = X_train[~val_mask], y_train[~val_mask]
+    X_val, y_val = X_train[val_mask], y_train[val_mask]
+    logger.info(
+        "oddsfree validation split: >= %s (train=%d, val=%d)",
+        pd.Timestamp(val_start).date(),
+        len(y_tr),
+        len(y_val),
+    )
 
     train_set = lgb.Dataset(
         X_tr, label=y_tr, categorical_feature=cat_cols, free_raw_data=False
@@ -114,18 +140,25 @@ def train_oddsfree_model(
         ],
     )
 
-    metrics = {}
+    metrics = {"target_column": target_column, "train_rows": int(len(y_train))}
     if len(y_test) > 0:
         y_prob = model.predict(X_test)
         metrics["roc_auc"] = float(roc_auc_score(y_test, y_prob))
         metrics["test_rows"] = int(len(y_test))
-        logger.info("oddsfree test ROC-AUC=%.4f", metrics["roc_auc"])
+        metrics["base_rate"] = float(np.mean(y_test))
+        logger.info(
+            "oddsfree test ROC-AUC=%.4f (target=%s, base_rate=%.4f)",
+            metrics["roc_auc"],
+            target_column,
+            metrics["base_rate"],
+        )
 
     artifact = {
         "model": model,
         "version": f"{version}_oddsfree",
         "feature_columns": feats,
         "categorical_columns": cat_cols,
+        "target_column": target_column,
         "metrics": metrics,
         "cutoff_year": cutoff_year,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
