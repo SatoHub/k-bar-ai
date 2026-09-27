@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
+from app.ml.sanity import run_sanity_checks
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -87,10 +89,21 @@ def train_model(
     X_train, y_train = _prepare_lgb_dataset(train_df)
     X_test, y_test = _prepare_lgb_dataset(test_df)
 
-    # 4. Validation split from train (last 10% by time)
-    val_cutoff = int(len(X_train) * 0.9)
-    X_val, y_val = X_train.iloc[val_cutoff:], y_train[val_cutoff:]
-    X_train_final, y_train_final = X_train.iloc[:val_cutoff], y_train[:val_cutoff]
+    # 4. Validation split from train — **日付**でカットオフする
+    #    ⚠️ 以前は iloc による位置ベースだった。build_feature_matrix が
+    #    エンティティ順にソートした df を返していたため、コメントの
+    #    "last 10% by time" とは異なり「特定の馬の集まり」になっていた
+    #    （2026-09-27 に発覚）。並び順に依存しないよう日付で明示的に切る。
+    val_start = train_df["race_date"].quantile(0.9)
+    val_mask = (train_df["race_date"] >= val_start).to_numpy()
+    X_val, y_val = X_train[val_mask], y_train[val_mask]
+    X_train_final, y_train_final = X_train[~val_mask], y_train[~val_mask]
+    logger.info(
+        "Validation split: >= %s (train=%d, val=%d)",
+        pd.Timestamp(val_start).date(),
+        len(y_train_final),
+        len(y_val),
+    )
 
     cat_cols = [c for c in CATEGORICAL_COLUMNS if c in X_train.columns]
 
@@ -143,6 +156,11 @@ def train_model(
         metrics["roc_auc"],
     )
 
+    # 6b. サニティチェック（指標だけでは壊れた特徴量に気づけないため常設）
+    #     - 市場特徴量への依存度
+    #     - シャッフルしても AUC が落ちない＝実質機能していない特徴量の検出
+    sanity = run_sanity_checks(model, X_test, y_test)
+
     # 7. Save model artifact
     all_features = FEATURE_COLUMNS + CATEGORICAL_COLUMNS
     artifact = {
@@ -151,6 +169,7 @@ def train_model(
         "feature_columns": all_features,
         "categorical_columns": cat_cols,
         "metrics": metrics,
+        "sanity": sanity,
         "cutoff_year": cutoff_year,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

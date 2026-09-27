@@ -106,6 +106,44 @@ def _load_raw_data(include_upcoming: bool = False) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Grouped window helper
+# ---------------------------------------------------------------------------
+
+
+def _grouped_window(
+    shifted: pd.Series,
+    keys: list[pd.Series],
+    *,
+    how: str,
+    window: int | None = None,
+) -> pd.Series:
+    """
+    グループ単位で rolling / expanding を適用する。
+
+    🔴 shift(1) 済みの Series に対して素の `.rolling()` / `.expanding()` を
+    直接呼んではいけない。groupby の外で呼ぶと窓がグループ境界をまたぎ、
+    各グループの先頭行が **直前のグループの値** を拾う。
+
+    2026-09-27 に発覚したバグで、24特徴量が影響を受けていた。
+    うち expanding 系の12個は「データ全体の累積平均」になっており、
+    騎手・調教師固有の情報をほぼ持っていなかった。さらに特徴量は
+    時系列分割の**前**に全期間まとめて計算されるため、並び順で前にいる
+    エンティティの未来のレースが過去行に混入するリークにもなっていた。
+
+    回帰テスト: backend/tests/test_features.py::TestGroupBoundaryLeakage
+    """
+    grouped = shifted.groupby(keys, observed=True)
+    win = (
+        grouped.expanding(min_periods=1)
+        if window is None
+        else grouped.rolling(window, min_periods=1)
+    )
+    out = getattr(win, how)()
+    # groupby が先頭に付けたキー階層を落として元の index に戻す
+    return out.reset_index(level=list(range(len(keys))), drop=True)
+
+
+# ---------------------------------------------------------------------------
 # Horse rolling statistics
 # ---------------------------------------------------------------------------
 
@@ -133,11 +171,22 @@ def _compute_horse_rolling_stats(df: pd.DataFrame) -> pd.DataFrame:
         place_shifted = grouped["is_place"].shift(1)
         prize_shifted = grouped["prize_money_10k_yen"].shift(1)
 
-        df[f"horse_avg_finish_{w}"] = finish_shifted.rolling(w, min_periods=1).mean()
-        df[f"horse_avg_last3f_{w}"] = last3f_shifted.rolling(w, min_periods=1).mean()
-        df[f"horse_win_rate_{w}"] = win_shifted.rolling(w, min_periods=1).mean()
-        df[f"horse_place_rate_{w}"] = place_shifted.rolling(w, min_periods=1).mean()
-        df[f"horse_avg_prize_{w}"] = prize_shifted.rolling(w, min_periods=1).mean()
+        keys = [df["horse_uuid"]]
+        df[f"horse_avg_finish_{w}"] = _grouped_window(
+            finish_shifted, keys, how="mean", window=w
+        )
+        df[f"horse_avg_last3f_{w}"] = _grouped_window(
+            last3f_shifted, keys, how="mean", window=w
+        )
+        df[f"horse_win_rate_{w}"] = _grouped_window(
+            win_shifted, keys, how="mean", window=w
+        )
+        df[f"horse_place_rate_{w}"] = _grouped_window(
+            place_shifted, keys, how="mean", window=w
+        )
+        df[f"horse_avg_prize_{w}"] = _grouped_window(
+            prize_shifted, keys, how="mean", window=w
+        )
 
     return df
 
@@ -156,14 +205,20 @@ def _compute_jockey_stats(df: pd.DataFrame) -> pd.DataFrame:
     win_shifted = grouped["is_win"].shift(1)
     place_shifted = grouped["is_place"].shift(1)
 
-    df["jockey_win_rate"] = win_shifted.expanding(min_periods=1).mean()
-    df["jockey_place_rate"] = place_shifted.expanding(min_periods=1).mean()
+    df["jockey_win_rate"] = _grouped_window(
+        win_shifted, [df["jockey_uuid"]], how="mean"
+    )
+    df["jockey_place_rate"] = _grouped_window(
+        place_shifted, [df["jockey_uuid"]], how="mean"
+    )
 
     # Jockey × course
     df = df.sort_values(["jockey_uuid", "racecourse_name", "race_date", "race_id_str"])
     jc_grouped = df.groupby(["jockey_uuid", "racecourse_name"])
     jc_win_shifted = jc_grouped["is_win"].shift(1)
-    df["jockey_course_win_rate"] = jc_win_shifted.expanding(min_periods=1).mean()
+    df["jockey_course_win_rate"] = _grouped_window(
+        jc_win_shifted, [df["jockey_uuid"], df["racecourse_name"]], how="mean"
+    )
 
     # Jockey × distance band (short/mile/mid/long)
     df["distance_band"] = pd.cut(
@@ -174,7 +229,9 @@ def _compute_jockey_stats(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["jockey_uuid", "distance_band", "race_date", "race_id_str"])
     jd_grouped = df.groupby(["jockey_uuid", "distance_band"], observed=True)
     jd_win_shifted = jd_grouped["is_win"].shift(1)
-    df["jockey_distance_win_rate"] = jd_win_shifted.expanding(min_periods=1).mean()
+    df["jockey_distance_win_rate"] = _grouped_window(
+        jd_win_shifted, [df["jockey_uuid"], df["distance_band"]], how="mean"
+    )
 
     df.drop(columns=["distance_band"], inplace=True)
     return df
@@ -193,14 +250,20 @@ def _compute_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
     win_shifted = grouped["is_win"].shift(1)
     place_shifted = grouped["is_place"].shift(1)
 
-    df["trainer_win_rate"] = win_shifted.expanding(min_periods=1).mean()
-    df["trainer_place_rate"] = place_shifted.expanding(min_periods=1).mean()
+    df["trainer_win_rate"] = _grouped_window(
+        win_shifted, [df["trainer_uuid"]], how="mean"
+    )
+    df["trainer_place_rate"] = _grouped_window(
+        place_shifted, [df["trainer_uuid"]], how="mean"
+    )
 
     # Trainer × course
     df = df.sort_values(["trainer_uuid", "racecourse_name", "race_date", "race_id_str"])
     tc_grouped = df.groupby(["trainer_uuid", "racecourse_name"])
     tc_win_shifted = tc_grouped["is_win"].shift(1)
-    df["trainer_course_win_rate"] = tc_win_shifted.expanding(min_periods=1).mean()
+    df["trainer_course_win_rate"] = _grouped_window(
+        tc_win_shifted, [df["trainer_uuid"], df["racecourse_name"]], how="mean"
+    )
 
     # Trainer × distance band (short/mile/mid/long)
     df["distance_band"] = pd.cut(
@@ -211,7 +274,9 @@ def _compute_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["trainer_uuid", "distance_band", "race_date", "race_id_str"])
     td_grouped = df.groupby(["trainer_uuid", "distance_band"], observed=True)
     td_win_shifted = td_grouped["is_win"].shift(1)
-    df["trainer_distance_win_rate"] = td_win_shifted.expanding(min_periods=1).mean()
+    df["trainer_distance_win_rate"] = _grouped_window(
+        td_win_shifted, [df["trainer_uuid"], df["distance_band"]], how="mean"
+    )
     df.drop(columns=["distance_band"], inplace=True)
 
     return df
@@ -231,9 +296,12 @@ def _compute_horse_surface_stats(df: pd.DataFrame) -> pd.DataFrame:
     place_shifted = hs_grouped["is_place"].shift(1)
     finish_shifted = hs_grouped["finish_position"].shift(1)
 
-    df["horse_surface_win_rate"] = win_shifted.expanding(min_periods=1).mean()
-    df["horse_surface_place_rate"] = place_shifted.expanding(min_periods=1).mean()
-    df["horse_surface_avg_finish"] = finish_shifted.rolling(5, min_periods=1).mean()
+    hs_keys = [df["horse_uuid"], df["surface"]]
+    df["horse_surface_win_rate"] = _grouped_window(win_shifted, hs_keys, how="mean")
+    df["horse_surface_place_rate"] = _grouped_window(place_shifted, hs_keys, how="mean")
+    df["horse_surface_avg_finish"] = _grouped_window(
+        finish_shifted, hs_keys, how="mean", window=5
+    )
 
     return df
 
@@ -248,8 +316,11 @@ def _compute_horse_track_condition_stats(df: pd.DataFrame) -> pd.DataFrame:
     win_shifted = htc_grouped["is_win"].shift(1)
     finish_shifted = htc_grouped["finish_position"].shift(1)
 
-    df["horse_track_cond_win_rate"] = win_shifted.expanding(min_periods=1).mean()
-    df["horse_track_cond_avg_finish"] = finish_shifted.rolling(5, min_periods=1).mean()
+    htc_keys = [df["horse_uuid"], df["track_condition"]]
+    df["horse_track_cond_win_rate"] = _grouped_window(win_shifted, htc_keys, how="mean")
+    df["horse_track_cond_avg_finish"] = _grouped_window(
+        finish_shifted, htc_keys, how="mean", window=5
+    )
 
     return df
 
@@ -271,7 +342,9 @@ def _compute_horse_condition_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Cumulative prize (sum of all prior races, excluding current)
     prize_shifted = grouped["prize_money_10k_yen"].shift(1)
-    df["cumulative_prize"] = prize_shifted.expanding(min_periods=1).sum()
+    df["cumulative_prize"] = _grouped_window(
+        prize_shifted, [df["horse_uuid"]], how="sum"
+    )
 
     # Cumulative race count (prior races)
     df["race_count"] = grouped.cumcount()  # 0-indexed = number of prior races
@@ -340,6 +413,11 @@ def build_feature_matrix(
     missing = [c for c in all_features if c not in df.columns]
     if missing:
         logger.warning("Missing feature columns: %s", missing)
+
+    # 日付昇順に戻す。trainer.py は iloc で検証用を切り出すため、ここが
+    # エンティティ順のままだと「時間順の末尾10%」にならない。
+    # 回帰テスト: tests/test_features.py::TestFeatureMatrixOrdering
+    df = df.sort_values(["race_date", "race_id_str"]).reset_index(drop=True)
 
     logger.info(
         "Feature matrix ready: %d rows, %d feature columns, NaN ratio: %.2f%%",
