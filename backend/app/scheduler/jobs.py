@@ -139,63 +139,80 @@ def register_jobs(scheduler: AsyncIOScheduler, manager: SchedulerManager) -> Non
         replace_existing=True,
     )
 
+    # --- LINE レポート／通知系（2026-09-27 に既定で無効化）------------------
+    # ユーザーの指示でレポート配信を停止した。プロジェクトは「賭けて勝つ」目的では
+    # 区切っており（docs/20260927-project-retrospective.md）、予想や成績の
+    # 定期配信は不要になった。
+    #
+    # 🔴 **証明書の更新失敗通知はここではない。** あれは systemd + deploy/ 配下
+    #    （certbot-renew.sh / cert-reload.sh / line-notify.sh / OnFailure）で、
+    #    このアプリのスケジューラとは独立に動く。HTTPS の生命線であり
+    #    shitagoshirae にも影響するので**絶対に止めない**。
+    #
+    # 戻し方: .env に `SCHED_NOTIFY_PREDICTION_ENABLED=true` 等を置く
+    #         （既定を False にしてあるので、環境変数だけで復活できる）
+
     # 6. Notify prediction: daily at 19:00 JST (after predict at 18:30)
-    scheduler.add_job(
-        job_notify_prediction,
-        CronTrigger(
-            hour=settings.SCHED_NOTIFY_PREDICTION_HOUR,
-            minute=settings.SCHED_NOTIFY_PREDICTION_MINUTE,
-            timezone=tz,
-        ),
-        id="notify_prediction",
-        name="予想通知送信",
-        kwargs={"manager": manager},
-        replace_existing=True,
-    )
+    if settings.SCHED_NOTIFY_PREDICTION_ENABLED:
+        scheduler.add_job(
+            job_notify_prediction,
+            CronTrigger(
+                hour=settings.SCHED_NOTIFY_PREDICTION_HOUR,
+                minute=settings.SCHED_NOTIFY_PREDICTION_MINUTE,
+                timezone=tz,
+            ),
+            id="notify_prediction",
+            name="予想通知送信",
+            kwargs={"manager": manager},
+            replace_existing=True,
+        )
 
     # 7. Notify results: daily at 20:00 JST (after results at 19:00)
-    scheduler.add_job(
-        job_notify_results,
-        CronTrigger(
-            hour=settings.SCHED_NOTIFY_RESULTS_HOUR,
-            minute=settings.SCHED_NOTIFY_RESULTS_MINUTE,
-            timezone=tz,
-        ),
-        id="notify_results",
-        name="結果通知送信",
-        kwargs={"manager": manager},
-        replace_existing=True,
-    )
+    if settings.SCHED_NOTIFY_RESULTS_ENABLED:
+        scheduler.add_job(
+            job_notify_results,
+            CronTrigger(
+                hour=settings.SCHED_NOTIFY_RESULTS_HOUR,
+                minute=settings.SCHED_NOTIFY_RESULTS_MINUTE,
+                timezone=tz,
+            ),
+            id="notify_results",
+            name="結果通知送信",
+            kwargs={"manager": manager},
+            replace_existing=True,
+        )
 
     # 8. Weekly report: Monday at 8:00 JST
-    scheduler.add_job(
-        job_weekly_report,
-        CronTrigger(
-            day_of_week=settings.SCHED_WEEKLY_REPORT_DAY_OF_WEEK,
-            hour=settings.SCHED_WEEKLY_REPORT_HOUR,
-            minute=settings.SCHED_WEEKLY_REPORT_MINUTE,
-            timezone=tz,
-        ),
-        id="weekly_report",
-        name="週次レポート送信",
-        kwargs={"manager": manager},
-        replace_existing=True,
-    )
+    if settings.SCHED_WEEKLY_REPORT_ENABLED:
+        scheduler.add_job(
+            job_weekly_report,
+            CronTrigger(
+                day_of_week=settings.SCHED_WEEKLY_REPORT_DAY_OF_WEEK,
+                hour=settings.SCHED_WEEKLY_REPORT_HOUR,
+                minute=settings.SCHED_WEEKLY_REPORT_MINUTE,
+                timezone=tz,
+            ),
+            id="weekly_report",
+            name="週次レポート送信",
+            kwargs={"manager": manager},
+            replace_existing=True,
+        )
 
     # 9. Monthly proposal: 1st of each month at 8:00 JST
-    scheduler.add_job(
-        job_monthly_proposal,
-        CronTrigger(
-            day=settings.SCHED_MONTHLY_PROPOSAL_DAY,
-            hour=settings.SCHED_MONTHLY_PROPOSAL_HOUR,
-            minute=settings.SCHED_MONTHLY_PROPOSAL_MINUTE,
-            timezone=tz,
-        ),
-        id="monthly_proposal",
-        name="月次改善提案送信",
-        kwargs={"manager": manager},
-        replace_existing=True,
-    )
+    if settings.SCHED_MONTHLY_PROPOSAL_ENABLED:
+        scheduler.add_job(
+            job_monthly_proposal,
+            CronTrigger(
+                day=settings.SCHED_MONTHLY_PROPOSAL_DAY,
+                hour=settings.SCHED_MONTHLY_PROPOSAL_HOUR,
+                minute=settings.SCHED_MONTHLY_PROPOSAL_MINUTE,
+                timezone=tz,
+            ),
+            id="monthly_proposal",
+            name="月次改善提案送信",
+            kwargs={"manager": manager},
+            replace_existing=True,
+        )
 
     # 10. Data integrity check: daily at 10:00 JST (after morning shutuba + predict)
     scheduler.add_job(
@@ -218,8 +235,6 @@ def register_jobs(scheduler: AsyncIOScheduler, manager: SchedulerManager) -> Non
         replace_existing=True,
     )
 
-    job_count = 13
-
     # 11. JRA-VAN sync reminder: weekly (only when enabled).
     # Reminds the user to run the home-PC JV-Link sync (方式C).
     # See docs/20260609-jravan-connection.md
@@ -237,11 +252,17 @@ def register_jobs(scheduler: AsyncIOScheduler, manager: SchedulerManager) -> Non
             kwargs={"manager": manager},
             replace_existing=True,
         )
-        job_count += 1
 
     # TODO: 3-month summary job (enable via SCHED_QUARTERLY_SUMMARY_ENABLED)
 
-    logger.info("Registered %d scheduler jobs", job_count)
+    # ⚠️ 以前は `job_count = 13` のハードコードだった。条件付き登録が増えると
+    #    ログが嘘になり、さらに代入位置より前で `+= 1` すると UnboundLocalError で
+    #    **スケジューラが起動不能になる**（この変更で実際に踏んだ）。実数を数える。
+    logger.info(
+        "Registered %d scheduler jobs: %s",
+        len(scheduler.get_jobs()),
+        ", ".join(j.id for j in scheduler.get_jobs()),
+    )
 
 
 # ---------------------------------------------------------------------------

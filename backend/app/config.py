@@ -49,16 +49,29 @@ class Settings(BaseSettings):
     SCHED_PREDICT_MODEL_VERSION: str = "v1.0.0"
     # Calendar scan: how many days ahead
     SCHED_CALENDAR_DAYS_AHEAD: int = 14
+    # --- LINE レポート／通知系（2026-09-27 に既定で無効化）------------------
+    # ユーザーの指示でレポート配信を停止した。プロジェクトは「賭けて勝つ」目的では
+    # 区切っており（docs/20260927-project-retrospective.md）、定期配信は不要。
+    # 復活させたい時は .env に `SCHED_WEEKLY_REPORT_ENABLED=true` 等を置く。
+    #
+    # 🔴 **証明書の更新失敗通知はここではない。** あれは systemd + deploy/ 配下
+    #    （certbot-renew.sh / cert-reload.sh / line-notify.sh / OnFailure）で、
+    #    このアプリとは独立に動く。HTTPS の生命線であり shitagoshirae にも
+    #    影響するので**絶対に止めない**。
     # Notification: prediction at 19:00, results at 20:00 JST
+    SCHED_NOTIFY_PREDICTION_ENABLED: bool = False
     SCHED_NOTIFY_PREDICTION_HOUR: int = 19
     SCHED_NOTIFY_PREDICTION_MINUTE: int = 0
+    SCHED_NOTIFY_RESULTS_ENABLED: bool = False
     SCHED_NOTIFY_RESULTS_HOUR: int = 20
     SCHED_NOTIFY_RESULTS_MINUTE: int = 0
     # Weekly report: Monday at 8:00 JST
+    SCHED_WEEKLY_REPORT_ENABLED: bool = False
     SCHED_WEEKLY_REPORT_HOUR: int = 8
     SCHED_WEEKLY_REPORT_MINUTE: int = 0
     SCHED_WEEKLY_REPORT_DAY_OF_WEEK: str = "mon"
     # Monthly proposal: 1st of each month at 8:00 JST
+    SCHED_MONTHLY_PROPOSAL_ENABLED: bool = False
     SCHED_MONTHLY_PROPOSAL_DAY: int = 1
     SCHED_MONTHLY_PROPOSAL_HOUR: int = 8
     SCHED_MONTHLY_PROPOSAL_MINUTE: int = 0
