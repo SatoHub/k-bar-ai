@@ -60,15 +60,30 @@
 - **アプリを畳む場合**: **対応不要。** ただし
   **「なぜ気づけなかったか」の教訓は retrospective §3-⑫ に記録済み**
 
-### P2-2 JV-Link 日次同期が 106回連続失敗（2026-06-11 以降）
+### ✅ P2-2 JV-Link 日次同期が 106回連続失敗（2026-06-11 以降）→ **2026-09-27 に無効化済み**
 
-- 自宅PCの Windows タスク「KBar JRA-VAN Daily Sync」は今も毎朝動くが全て失敗。
-  原因は朝6:30に Docker(PostgreSQL) が起動していないこと（**推測**・未実測）
+- Windows タスク「KBar JRA-VAN Daily Sync」は **毎日12:00** 起動で、
+  2026-06-11 20:30 を最後に成功せず 106回連続失敗（6月19 / 7月31 / 8月29 / 9月27回）
+  ⚠️ 以前のメモにあった「朝6:30」は**誤り**。実測したトリガーは 12:00
+- 失敗理由は `Failed to connect to PostgreSQL ... 127.0.0.1:5432`。
+  実行時刻に Docker(PostgreSQL) が起動していないためと**推測**（実行時刻の Docker 状態は未実測）
 - **JRA-VAN は未契約なので、そもそも取得できない状態**（2026-09-27 にマイページで確認）
-- 対処: **Windows タスクを無効化する**（毎朝無駄に失敗し続けている）。
-  スケジューラの `jravan_reminder` ジョブ（週次 LINE）も止めるのが筋
-- **アプリを畳む場合**: **タスク無効化とリマインダー停止は畳んでも必要**
-  （でないと「JRA-VAN 同期しろ」という LINE が毎週届き続ける）
+- **✅ 対処済み**: タスクを **disable**（削除ではない）。実測で `Status: Disabled` /
+  `Next Run Time: N/A` を独立確認（`schtasks /Query`）
+- **戻し方**:
+  ```powershell
+  Enable-ScheduledTask -TaskName "KBar JRA-VAN Daily Sync"
+  ```
+  定義は `backend/jravan/KBar-JRA-VAN-Daily-Sync.task.xml` にエクスポート済み
+  （ローカルパスを含むため gitignore。タスクごと消した場合は
+  `Register-ScheduledTask -Xml (Get-Content <xml> | Out-String) -TaskName "KBar JRA-VAN Daily Sync"`）
+
+### ✅ 週次リマインダー LINE は本番で**無効**だった（対応不要）
+
+- 送信元は本番スケジューラの `job_jravan_reminder`（`backend/app/scheduler/jobs.py`）。
+  金曜9:00 の CronTrigger だが、**登録は `SCHED_JRAVAN_REMINDER_ENABLED` に依存**
+- **実測: 本番の稼働中プロセスで `False`。スケジューラに jravan 関連ジョブは0件**
+  → **LINE は届いていない。本番側の変更は不要**（当初「毎週届き続ける」と書いたのは誤り）
 
 ### P2-3 バッチの失敗が通知されない
 
@@ -122,9 +137,10 @@
 
 | 判断 | 必要になる作業 |
 |---|---|
-| **A 止める** | DB を pg_dump でバックアップ → コンテナ停止。P2-2（Windowsタスク無効化＋リマインダー停止）と P1-3 は実施 |
+| **A 止める** | DB を pg_dump でバックアップ → コンテナ停止。P1-3 は実施（P2-2 は済） |
 | **B データ収集だけ残す** | 予想生成・LINE通知ジョブを止める。P1-1/P1-2 は入れたほうがよい（落ちても気づけないため）。`odds_snapshots` の蓄積が継続 |
 | **C 現状維持** | P1-1 / P1-2 / P2-1 / P2-2 すべて対応が望ましい |
 | **D 整理のみ** | P1-3 と P2-2 だけ |
 
-**どの案でも共通して必要**: P2-2（毎朝失敗する Windows タスクの無効化）と P1-3（`.htpasswd.bak` 削除）。
+**どの案でも共通して必要**: ~~P2-2~~（**2026-09-27 に無効化済み**）と **P1-3（`.htpasswd.bak` 削除）**。
+→ **残っているのは P1-3 だけ**（別リポジトリなので VPS 上でユーザーが `rm` 1回）。

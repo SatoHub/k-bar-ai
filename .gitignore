@@ -61,3 +61,6 @@ docker/nginx/.htpasswd.*
 *.key
 privkey*
 letsencrypt/
+
+# Windows タスク定義のエクスポート（ローカルパスを含むためコミットしない）
+backend/jravan/*.task.xml
