@@ -208,6 +208,9 @@ def main() -> None:
         f"  評価:         {len(evald):,}行 / {evald['race_id_str'].nunique():,}レース "
         f"({evald['race_date'].min().date()} 〜 {evald['race_date'].max().date()})"
     )
+    corr = float(df["x_model"].corr(df["x_market"]))
+    print(f"  logit(p_model) と logit(p_market) の相関: {corr:.4f}")
+    results["x_correlation"] = corr
     results["samples"] = {
         "stage2_races": int(stage2["race_id_str"].nunique()),
         "eval_races": int(evald["race_id_str"].nunique()),
@@ -226,13 +229,34 @@ def main() -> None:
     )
     _print_coefs(fit)
     a = fit["coefficients"]["alpha_model"]
-    alpha_significant = bool(a["p_value"] < 0.05 and a["ci95"][0] > 0)
+    # 🔴 有意性は**符号と独立に**判定する（両側検定）。
+    #    当初は `ci95[0] > 0` を条件に入れていたため、α が有意に**負**の場合を
+    #    「有意でない」と誤分類していた（codex が指摘。α=-0.6 の合成データで
+    #    p≈3.8e-99 なのに False になることを実測で示された）。
+    #    α<0 も「情報がある」ことの証拠で、結合モデルは符号を反転して使える。
+    alpha_significant = bool(a["p_value"] < 0.05)
+    alpha_direction = "正" if a["estimate"] > 0 else "負"
     print(
-        f"\n  → α {'は 0 と区別できる（有意）' if alpha_significant else 'は 0 と区別できない'}"
+        f"\n  → α {'は 0 と区別できる（有意・符号は' + alpha_direction + '）' if alpha_significant else 'は 0 と区別できない'}"
         f"  p={a['p_value']:.3e} / 95%CI=[{a['ci95'][0]:.4f}, {a['ci95'][1]:.4f}]"
+    )
+    # 🔴 「棄却できなかった」は「ゼロである」の証明ではない（codex 指摘）。
+    #    事前に等価性マージンを登録していないので正式な等価性検定はできない。
+    #    代わりに **効果量の上限**（CI の 0 から遠い側の端）を示し、
+    #    それが実務的にどれだけ小さいかを市場の係数との比で述べる。
+    beta_est = fit["coefficients"]["beta_market"]["estimate"]
+    effect_bound = max(abs(a["ci95"][0]), abs(a["ci95"][1]))
+    print(
+        f"  ⚠️ 有意でない場合、それは「α=0 が証明された」ことではない。\n"
+        f"     言えるのは効果量の上限だけ: |α| ≤ {effect_bound:.4f}（95%信頼）\n"
+        f"     = 市場の係数 β={beta_est:.4f} の {effect_bound / abs(beta_est) * 100:.1f}%"
     )
     results["stage2_conditional_logit"] = fit
     results["alpha_significant"] = alpha_significant
+    results["alpha_effect_size_bound"] = float(effect_bound)
+    results["alpha_bound_as_pct_of_beta"] = float(
+        effect_bound / abs(beta_est) * 100 if beta_est else float("nan")
+    )
 
     # 市場だけのモデル（α を強制的に 0 にした場合）との尤度比検定
     market_only = fit_conditional_logit(
@@ -320,7 +344,14 @@ def main() -> None:
             "α が 0 と区別できないため、期待値ベースの戦略は成立しない。\n"
             "参考値として ROI は出すが、判定には使わない。"
         )
-    evald["edge_blend"] = evald["p_blend"] - evald["p_market"]
+    # 🔴 主判定の比較相手は **p_market_only**（β だけ再推定した市場モデル）。
+    #    生の p_market と比べると、α̂=0 でも β̂≠1 なら p_blend ≠ p_market に
+    #    なるため、「モデルが足した情報」ではなく**市場ロジットの温度変更
+    #    （人気薄方向への再校正）だけ**で半数近くの馬を選んでしまう。
+    #    それは α の寄与を測っていない（code-reviewer H-4 の指摘）。
+    #    β のみのモデルとの差が α の純粋な寄与。
+    evald["edge_alpha"] = evald["p_blend"] - evald["p_market_only"]
+    evald["edge_vs_raw_market"] = evald["p_blend"] - evald["p_market"]
     evald["ev_blend"] = evald["p_blend"] * evald["win_odds"].astype(float)
 
     def roi(mask, label: str) -> dict:
@@ -337,9 +368,22 @@ def main() -> None:
     ]:
         print("  " + _fmt_roi(r))
 
-    print(f"\n[🔴 主判定: 結合モデルの edge > {PRIMARY_EDGE_THRESHOLD}]")
-    primary = roi(evald["edge_blend"] > PRIMARY_EDGE_THRESHOLD, "結合 edge>0")
+    print(
+        f"\n[🔴 主判定: α の寄与だけを取り出す "
+        f"(p_blend − p_market_only) > {PRIMARY_EDGE_THRESHOLD}]"
+    )
+    primary = roi(evald["edge_alpha"] > PRIMARY_EDGE_THRESHOLD, "α寄与 edge>0")
     print("  " + _fmt_roi(primary))
+    raw_cmp = roi(
+        evald["edge_vs_raw_market"] > PRIMARY_EDGE_THRESHOLD,
+        "（参考）生の市場確率と比較",
+    )
+    print("  " + _fmt_roi(raw_cmp, show_verdict=False))
+    print(
+        "  ⚠️ 下の行は β の温度変更（人気薄方向の再校正）も拾うため"
+        "α の寄与を測っていない"
+    )
+    results["roi_vs_raw_market_reference"] = raw_cmp
 
     print("\n[探索: 期待値 EV = 結合確率 × オッズ]")
     ev_rows = [roi(evald["ev_blend"] > t, f"EV>{t:.2f}") for t in [1.0, 1.05, 1.1, 1.2]]
@@ -350,43 +394,108 @@ def main() -> None:
     bands = []
     for lo, hi in [(1, 3), (3, 6), (6, 12), (12, 30), (30, 1e9)]:
         m = (
-            (evald["edge_blend"] > PRIMARY_EDGE_THRESHOLD)
+            (evald["edge_alpha"] > PRIMARY_EDGE_THRESHOLD)
             & (evald["win_odds"].astype(float) >= lo)
             & (evald["win_odds"].astype(float) < hi)
         )
         bands.append(roi(m, f"edge>0 かつ {lo}〜{'∞' if hi > 1e8 else int(hi)}倍"))
     for r in bands:
         print("  " + _fmt_roi(r, show_verdict=False))
-    results["roi"] = {"primary": primary, "ev": ev_rows, "odds_bands": bands}
+
+    # 事前登録 §4「年別・月別にも ROI を出す」。評価期間が 2021+ に縮んだ分、
+    # 単一年に支えられているリスクは前回より高い（code-reviewer M-4）。
+    print("\n[時系列: 主判定を年別に割る]")
+    sel = evald["edge_alpha"] > PRIMARY_EDGE_THRESHOLD
+    yearly = [
+        roi(sel & (evald["race_date"].dt.year == y), f"{y}年")
+        for y in sorted(evald["race_date"].dt.year.unique())
+    ]
+    for r in yearly:
+        print("  " + _fmt_roi(r, show_verdict=False))
+    month_key = evald["race_date"].dt.to_period("M").astype(str)
+    monthly = [roi(sel & (month_key == m), f"{m}") for m in sorted(month_key.unique())]
+    pos = [r for r in monthly if r["roi"] is not None and r["roi"] > 1.0]
+    print(
+        f"  月別 {len(monthly)} 区間: 100%超の月 {len(pos)}/{len(monthly)}"
+        f"（いずれも点数不足で単独では判定不能）"
+    )
+
+    results["roi"] = {
+        "primary_alpha_contribution": primary,
+        "ev": ev_rows,
+        "odds_bands": bands,
+        "yearly": yearly,
+        "monthly": monthly,
+    }
 
     # ------------------------------------------- 4. 最終判定
     _hr("4. 最終判定")
+    # 🔴 「示せなかった」と「無いことが示された」を書き分ける（codex 指摘）。
+    #    帰無仮説を棄却できないことは帰無仮説の証明ではない。
+    info_label = (
+        f"✅ 足せる（α は有意・符号は{alpha_direction}）"
+        if alpha_significant
+        else "❌ 足せることを示せなかった（α=0 の証明ではない）"
+    )
     print(
-        f"問い1「モデルは市場に情報を足せるか」: "
-        f"{'✅ 足せる' if alpha_significant else '❌ 足せない'}\n"
+        f"問い1「モデルは市場に情報を足せるか」: {info_label}\n"
         f"  α = {a['estimate']:.4f} (SE {a['std_error']:.4f}) "
         f"p = {a['p_value']:.3e} 95%CI [{a['ci95'][0]:.4f}, {a['ci95'][1]:.4f}]\n"
+        f"  効果量の上限: |α| ≤ {effect_bound:.4f}"
+        f"（市場の係数 β={beta_est:.4f} の "
+        f"{effect_bound / abs(beta_est) * 100:.1f}%）\n"
         f"  out-of-sample の対数損失改善 = {d_ll:+.5f}"
     )
-    if alpha_significant:
-        econ = primary["verdict"]
-        econ_reason = primary["verdict_reason"]
-    else:
+
+    # 🔴 キャリブレーションのゲートを経済判定の前に必ず通す（codex P1 指摘）。
+    #    事前登録 §3 は「ECE > 0.02 なら EV ベースの戦略は成立しない」と
+    #    決めている。ECE を計算していたのに判定に使っていなかった。
+    blend_cal = calibration(evald["p_blend"].to_numpy(), evald["is_win"].to_numpy())
+    print(
+        f"\n  結合モデルのキャリブレーション: ECE={blend_cal['ece']:.4f} "
+        f"(許容 {ECE_TOLERANCE}) 有効ビン {blend_cal['n_bins_effective']}"
+        f"/{blend_cal['n_bins_requested']} → "
+        f"{'OK' if blend_cal['calibration_ok'] else '🔴 使えない'}"
+    )
+    results["blend_calibration"] = blend_cal
+
+    if not alpha_significant:
         econ = VERDICT_UNDECIDABLE
         econ_reason = (
-            "α が 0 と区別できないため、期待値ベースの戦略の前提が成立しない"
+            "α が 0 と区別できず、期待値ベースの戦略の前提が成立しない"
             f"（参考: 主判定 ROI={primary['roi']}, {primary['verdict']}）"
         )
+    elif not blend_cal["calibration_ok"]:
+        econ = VERDICT_UNDECIDABLE
+        econ_reason = (
+            f"結合モデルのキャリブレーションが許容を超えている"
+            f"(ECE={blend_cal['ece']:.4f} > {ECE_TOLERANCE})。"
+            "事前登録 §3 により EV ベースの判定は成立しない"
+        )
+    else:
+        econ = primary["verdict"]
+        econ_reason = primary["verdict_reason"]
     print(f"\n問い2「儲かるか」: {econ}\n  理由: {econ_reason}")
     print(
         "\n⚠️ 限界（必ず併記する）:\n"
         "  - 確定オッズで採点している。実運用では締切前オッズしか使えないため、\n"
         "    ここで測った ROI は**現実より楽観的**\n"
         "  - 評価期間は 2021年以降のみ。前回の 5,585レースより小さい\n"
+        "  - 🔴 **これは同じデータに対する2本目の事前登録である。**\n"
+        "    評価期間 2021+ は前回検証(2020+)に**含まれており**、\n"
+        "    前回の結果を見た後に設計を変えている（garden of forking paths）。\n"
+        "    family-wise なエラー率は制御されていない\n"
+        "  - Wald 検定(α の p 値)と尤度比検定は同じ仮説の漸近同等版なので、\n"
+        "    2件を**独立な裏付けとして読まないこと**\n"
+        "  - α が有意でなかったのが「情報が無い」のか「検出力不足」なのかの\n"
+        "    切り分けには x_model と x_market の相関（多重共線性）の測定が必要。\n"
+        "    効果量の上限はその懸念への部分的な回答\n"
         "  - 複勝以降は払戻オッズが DB に無く評価不能"
     )
     results["final"] = {
-        "adds_information": alpha_significant,
+        "adds_information_established": alpha_significant,
+        "alpha_direction": alpha_direction if alpha_significant else None,
+        "note": "有意でない場合、これは「情報が無いことの証明」ではなく「示せなかった」の意味",
         "economic_verdict": econ,
         "economic_reason": econ_reason,
         "ece_tolerance": ECE_TOLERANCE,

@@ -164,6 +164,11 @@ def fit_conditional_logit(
         cov = None
         se = np.full(k, np.nan)
 
+    # 完全分離（separation）だと係数が発散するが BFGS は「収束」と報告する。
+    # 実測で theta=[-10.45, 7.4e-17] / converged=True になる例があった
+    # （code-reviewer 指摘）。SE が意味を失ったまま有意に見えるのを防ぐ。
+    diverged = bool(np.max(np.abs(theta)) > 50.0)
+
     ll = float(np.sum(y * np.log(np.clip(p, 1e-300, None))))
     # 帰無モデル = レース内一様（各馬 1/頭数）
     size = np.bincount(codes, minlength=n_races).astype("float64")
@@ -193,7 +198,8 @@ def fit_conditional_logit(
         "mcfadden_r2": float(1.0 - ll / ll_null) if ll_null != 0 else None,
         "n_entries": int(len(y)),
         "n_races": int(n_races),
-        "converged": bool(res.success),
+        "converged": bool(res.success) and not diverged,
+        "diverged": diverged,
         "optimizer_message": str(res.message),
         "theta": theta.tolist(),
         "feature_names": names,
@@ -219,6 +225,21 @@ def race_log_loss(prob: np.ndarray, race_ids, is_winner: np.ndarray) -> float:
     p = np.asarray(prob, dtype="float64")
     y = np.asarray(is_winner, dtype="float64")
     codes, n_races = _race_codes(race_ids)
+
+    # ⚠️ `fit_conditional_logit` と同じ前提（各レース勝ち馬ちょうど1頭）を
+    #    ここでも検査する。無検査だと壊れた入力で**静かに誤答する**:
+    #      勝ち馬0頭 → log(1e-300)=690 が平均に混ざり指標を破壊
+    #      同着2頭   → 2頭の確率を足した値を返す（例外も警告も出ない）
+    #    log loss はモデル比較＝金銭判断に使うので、静かに逆転されるのが最悪
+    #    （code-reviewer が実測して指摘）。
+    wins_per_race = np.bincount(codes, weights=y, minlength=n_races)
+    if not np.allclose(wins_per_race, 1.0):
+        bad = int((~np.isclose(wins_per_race, 1.0)).sum())
+        raise ValueError(
+            f"勝ち馬がちょうど1頭でないレースが {bad} 件ある。"
+            "同着や未確定を呼び出し側で除いてから渡すこと"
+        )
+
     winner_p = np.bincount(codes, weights=y * p, minlength=n_races)
     return float(-np.mean(np.log(np.clip(winner_p, 1e-300, None))))
 
