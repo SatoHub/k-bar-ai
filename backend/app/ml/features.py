@@ -390,6 +390,17 @@ def build_feature_matrix(
     if df is None:
         df = _load_raw_data(include_upcoming=include_upcoming)
 
+    # 🔴 index が重複していると _grouped_window の結果代入が index アライメントで
+    #    **別グループの値を黙って入れる**（pandas 3.0.1 で実測確認済み）。
+    #    本番経路は read_sql の一意な RangeIndex だが、concat やバックテストから
+    #    df を渡す経路が増えた瞬間に無警告で壊れるため入口で弾く。
+    if not df.index.is_unique:
+        raise ValueError(
+            "build_feature_matrix: df の index が一意でない。"
+            "集計結果が別グループの値と入れ替わるため処理できない。"
+            "呼び出し側で reset_index(drop=True) すること。"
+        )
+
     logger.info("Computing horse rolling stats...")
     df = _compute_horse_rolling_stats(df)
     logger.info("Computing jockey stats...")

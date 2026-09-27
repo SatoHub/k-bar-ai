@@ -202,25 +202,40 @@ def _make_multi_entity_df() -> pd.DataFrame:
     """
     境界を踏むための合成データ。
 
-    - horse_0 / jockey_0 / trainer_0 : 芝3走 + ダ2走、すべて1着（勝率1.0）
-    - horse_1 / jockey_1 / trainer_1 : 芝3走、すべて8着（勝率0.0）
+    - horse_0 / jockey_0 / trainer_0 : 6走すべて1着（勝率1.0）
+    - horse_1 / jockey_1 / trainer_1 : 6走すべて8着（勝率0.0）
 
     horse_0 が並び順で先に来るため、バグがあると horse_1 の初戦が
     horse_0 の「勝率1.0」を拾う。期待値は NaN（過去走が無い）。
-    距離・競馬場は1種類に固定し、複合キーの集計もエンティティ単位に潰している。
+
+    ⚠️ **複合キーの2つ目を必ず変化させること。**
+    当初は racecourse_name / track_condition / distance_m を固定していたため、
+    `jockey_course_win_rate` などの複合キー6特徴量について
+    「正しいキーで集計しているか」を検証する力が実質ゼロだった
+    （test-reviewer が mutation testing で実証: groupby から racecourse_name を
+     落としてもテストが合格した）。競馬場2値・馬場状態2値・距離帯2値にしている。
     """
     rows = []
 
-    def add(idx: int, horse: str, surface: str, finish: int, day: int) -> None:
+    def add(
+        idx: int,
+        horse: str,
+        surface: str,
+        course: str,
+        cond: str,
+        distance: int,
+        finish: int,
+        day: int,
+    ) -> None:
         rows.append(
             {
                 "entry_id": f"e{idx}",
                 "race_id_str": f"r{idx:03d}",
                 "race_date": pd.Timestamp("2018-01-01") + pd.Timedelta(days=day),
-                "racecourse_name": "東京",
+                "racecourse_name": course,
                 "surface": surface,
-                "distance_m": 1600,
-                "track_condition": "良",
+                "distance_m": distance,
+                "track_condition": cond,
                 "weather": "晴",
                 "direction": "左",
                 "bracket_number": 1,
@@ -245,16 +260,26 @@ def _make_multi_entity_df() -> pd.DataFrame:
             }
         )
 
+    # (surface, 競馬場, 馬場状態, 距離) — 複合キーの2つ目を必ず2値以上にする。
+    # 距離 1200→"short" / 2000→"mid"（features.py の pd.cut と同じ境界）。
+    # 各馬が同じ条件系列を走るので、(馬,条件) や (騎手,条件) の各グループに
+    # 必ず「初回行」が生まれ、境界が複数できる。
+    CONDITIONS = [
+        ("芝", "東京", "良", 1200),
+        ("芝", "東京", "稍重", 2000),
+        ("芝", "中山", "良", 2000),
+        ("ダ", "中山", "稍重", 1200),
+        ("ダ", "東京", "良", 2000),
+        ("ダ", "中山", "良", 1200),
+    ]
+
     i = 0
-    for d in range(3):  # horse_0 芝3走・全1着
-        add(i, "horse_0", "芝", 1, d)
-        i += 1
-    for d in range(3, 5):  # horse_0 ダ2走・全1着
-        add(i, "horse_0", "ダ", 1, d)
-        i += 1
-    for d in range(5, 8):  # horse_1 芝3走・全8着
-        add(i, "horse_1", "芝", 8, d)
-        i += 1
+    day = 0
+    for horse, finish in [("horse_0", 1), ("horse_1", 8)]:
+        for surface, course, cond, dist in CONDITIONS:
+            add(i, horse, surface, course, cond, dist, finish, day)
+            i += 1
+            day += 1
 
     df = pd.DataFrame(rows)
     df["race_date"] = pd.to_datetime(df["race_date"])
@@ -272,17 +297,34 @@ def _make_multi_entity_df() -> pd.DataFrame:
     return df
 
 
+def _with_distance_band(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    距離帯を復元する。
+
+    `features.py` は `distance_band` を集計後に drop するため、
+    テスト側で同じ境界で作り直して集計キーとして使う。
+    境界を変えたらここも合わせること（`_compute_jockey_stats` 参照）。
+    """
+    df = df.copy()
+    df["distance_band"] = pd.cut(
+        df["distance_m"],
+        bins=[0, 1400, 1800, 2200, 9999],
+        labels=["short", "mile", "mid", "long"],
+    )
+    return df
+
+
 # 特徴量 → 本来の集計単位（このキーごとの先頭行は「過去走なし」= NaN であるべき）
 GROUP_KEYS_BY_FEATURE = {
     # --- expanding 系（バグ時は全行が汚染された） ---
     "jockey_win_rate": ["jockey_uuid"],
     "jockey_place_rate": ["jockey_uuid"],
     "jockey_course_win_rate": ["jockey_uuid", "racecourse_name"],
-    "jockey_distance_win_rate": ["jockey_uuid"],
+    "jockey_distance_win_rate": ["jockey_uuid", "distance_band"],
     "trainer_win_rate": ["trainer_uuid"],
     "trainer_place_rate": ["trainer_uuid"],
     "trainer_course_win_rate": ["trainer_uuid", "racecourse_name"],
-    "trainer_distance_win_rate": ["trainer_uuid"],
+    "trainer_distance_win_rate": ["trainer_uuid", "distance_band"],
     "horse_surface_win_rate": ["horse_uuid", "surface"],
     "horse_surface_place_rate": ["horse_uuid", "surface"],
     "horse_track_cond_win_rate": ["horse_uuid", "track_condition"],
@@ -308,8 +350,16 @@ class TestGroupBoundaryLeakage:
 
     @pytest.mark.parametrize(("feature", "keys"), sorted(GROUP_KEYS_BY_FEATURE.items()))
     def test_group_head_is_nan(self, feature: str, keys: list[str]) -> None:
-        """各集計単位の初回行は、過去走が無いので NaN でなければならない。"""
-        result = build_feature_matrix(_make_multi_entity_df())
+        """
+        各集計単位の初回行は、過去走が無いので NaN でなければならない。
+
+        ⚠️ これは「先頭行」しか見ていない。
+        「先頭だけ NaN に帳尻を合わせ、2行目以降は別グループを引きずる」
+        という不完全な修正は**この検査を通過する**
+        （test-reviewer が mutation testing で実証）。
+        2行目以降は `test_window_features_second_row_values` で検査する。
+        """
+        result = _with_distance_band(build_feature_matrix(_make_multi_entity_df()))
         heads = (
             result.sort_values(keys + ["race_date", "race_id_str"])
             .groupby(keys, observed=True)
@@ -337,6 +387,46 @@ class TestGroupBoundaryLeakage:
         assert h1.iloc[1]["jockey_win_rate"] == 0.0, (
             f"騎手の通算勝率も 0.0 のはず。実際={h1.iloc[1]['jockey_win_rate']}"
         )
+
+    def test_window_features_second_row_values(self) -> None:
+        """
+        2行目・3行目の値も検査する（先頭行だけの検査では不十分）。
+
+        ⚠️ `test_group_head_is_nan` は「先頭行が NaN」しか保証しない。
+        「先頭だけ帳尻を合わせ2行目以降は別グループを引きずる」修正は
+        そちらを通過してしまう（test-reviewer の mutation testing で実証）。
+        horse_1 は全敗・prize は毎走100固定なので期待値が手計算できる。
+        """
+        result = build_feature_matrix(_make_multi_entity_df())
+        h1 = result[result["horse_uuid"] == "horse_1"].sort_values(
+            ["race_date", "race_id_str"]
+        )
+
+        # 窓3・窓5の両方、勝率・平均着順・平均賞金を代表として押さえる
+        for row, n_prior in [(1, 1), (2, 2), (3, 3)]:
+            assert h1.iloc[row]["horse_win_rate_3"] == 0.0, (
+                f"{row + 1}走目の勝率(窓3)が0でない: {h1.iloc[row]['horse_win_rate_3']}"
+            )
+            assert h1.iloc[row]["horse_win_rate_5"] == 0.0, (
+                f"{row + 1}走目の勝率(窓5)が0でない: {h1.iloc[row]['horse_win_rate_5']}"
+            )
+            assert h1.iloc[row]["horse_avg_finish_3"] == 8.0, (
+                f"{row + 1}走目の平均着順が8でない: "
+                f"{h1.iloc[row]['horse_avg_finish_3']}"
+            )
+            assert h1.iloc[row]["horse_avg_prize_5"] == 100.0, (
+                f"{row + 1}走目の平均賞金が100でない: "
+                f"{h1.iloc[row]['horse_avg_prize_5']}"
+            )
+            # 通算賞金は「過去走数 × 100」で線形に増えること
+            assert h1.iloc[row]["cumulative_prize"] == 100.0 * n_prior, (
+                f"{row + 1}走目の通算賞金が {100.0 * n_prior} でない: "
+                f"{h1.iloc[row]['cumulative_prize']}"
+            )
+
+        # 騎手・調教師の通算勝率も2行目以降が0であること
+        assert h1.iloc[1]["jockey_win_rate"] == 0.0
+        assert h1.iloc[2]["trainer_win_rate"] == 0.0
 
     def test_cumulative_prize_is_per_horse(self) -> None:
         """通算賞金が全馬の累計になっていないこと（1走=100なので2走目は100）。"""

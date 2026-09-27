@@ -159,7 +159,15 @@ def train_model(
     # 6b. サニティチェック（指標だけでは壊れた特徴量に気づけないため常設）
     #     - 市場特徴量への依存度
     #     - シャッフルしても AUC が落ちない＝実質機能していない特徴量の検出
-    sanity = run_sanity_checks(model, X_test, y_test)
+    #     ⚠️ 診断が学習成果を消してはいけない。ここは artifact 保存より前なので、
+    #        例外を通すと数十分かけた学習が .joblib にも DB にも残らず消える
+    #        （実際に categorical の dtype 破壊で必ず落ちる状態だった。
+    #         レビュー3件で同一指摘）。サニティは成否ではなく診断なので必ず握る。
+    try:
+        sanity = run_sanity_checks(model, X_test, y_test)
+    except Exception as e:  # noqa: BLE001 - 診断の失敗で学習を捨てない
+        logger.warning("サニティチェックが失敗した（学習結果は保存する）: %s", e)
+        sanity = {"error": f"{type(e).__name__}: {e}"}
 
     # 7. Save model artifact
     all_features = FEATURE_COLUMNS + CATEGORICAL_COLUMNS

@@ -61,15 +61,26 @@ def permutation_auc_drop(
     """
     base = _auc(booster, X, y)
     drops: dict[str, float] = {}
+    # フレーム全体のコピーはループ外で1回だけ。中で毎回 copy すると
+    # 特徴量数 × PERMUTATION_REPEATS 回（本番で123回）の全件コピーになる。
+    shuffled = X.copy()
     for col in X.columns:
+        original = shuffled[col]
         # 1回のシャッフルだと乱数の揺れで順位が入れ替わるため平均を取る
         total = 0.0
         for r in range(PERMUTATION_REPEATS):
             rng = np.random.default_rng(seed + r)
-            shuffled = X.copy()
-            shuffled[col] = rng.permutation(shuffled[col].to_numpy())
+            # ⚠️ `rng.permutation(series.to_numpy())` で代入してはいけない。
+            #    categorical 列の dtype が落ち、LightGBM が
+            #    "train and valid dataset categorical_feature do not match"
+            #    で例外を投げる（本番は surface / track_condition 等6列が
+            #    categorical。codex レビューで検出し実測で再現）。
+            #    位置シャッフル + set_axis なら dtype と categories を保てる。
+            order = rng.permutation(len(shuffled))
+            shuffled[col] = original.iloc[order].set_axis(shuffled.index)
             total += base - _auc(booster, shuffled, y)
         drops[col] = total / PERMUTATION_REPEATS
+        shuffled[col] = original  # 次の列に進む前に必ず戻す
     return drops
 
 
@@ -94,7 +105,9 @@ def odds_dependency(
 
     shuffled = X.copy()
     for col in present:
-        shuffled[col] = rng.permutation(shuffled[col].to_numpy())
+        # dtype を保つ位置シャッフル（permutation_auc_drop 内の注意書き参照）
+        order = rng.permutation(len(shuffled))
+        shuffled[col] = shuffled[col].iloc[order].set_axis(shuffled.index)
     shuffled_auc = _auc(booster, shuffled, y)
     return {
         "baseline_auc": base,

@@ -19,9 +19,18 @@ logger = logging.getLogger(__name__)
 # 単勝1点あたりの賭け金（円）。ROI は「払戻合計 / 賭け金合計」。
 BET_UNIT_YEN = 100
 
-# JRA の単勝払戻率。控除率20%なので、無技能で賭け続けた期待 ROI は約 0.80。
-# **この値を超えていなければ、そのモデルに賭ける意味は無い。**
-JRA_WIN_PAYOUT_RATE = 0.80
+# 🔴 **損益分岐は ROI 1.0。** ROI = 払戻合計 / 賭け金合計 なので、
+#    1.0 を下回っている限り賭け続けるほど確実に減る。
+BREAKEVEN_ROI = 1.0
+
+# JRA の単勝払戻率（控除率20%）。**無技能で賭け続けた期待 ROI** がこの値。
+# ⚠️ これは「損益分岐」ではない。0.85 なら市場平均は超えているが、
+#    100円あたり15円ずつ減り続ける。参考線として使うだけにすること
+#    （当初 breakeven と誤称しており、レビュー3件で同一指摘を受けた）。
+RANDOM_BET_EXPECTED_ROI = 0.80
+
+# 単勝 ROI は高オッズ1本で大きく動く。これ未満の件数ではフラグを信用しない。
+MIN_BETS_FOR_RELIABLE_ROI = 500
 
 _VERIFY_SQL = text("""
     SELECT
@@ -58,7 +67,13 @@ def _win_roi(bets: pd.DataFrame) -> dict:
       「締切直前に賭けた場合」の値として読むこと。
       オッズが欠損している行は賭けられないので集計から除外する。
     """
-    usable = bets[bets["win_odds"].notna() & (bets["win_odds"] > 0)]
+    # actual_position の NaN 除外は呼び出し側でも行っているが、金銭の計算なので
+    # ここでも防御する（未確定レースを「ハズレ」として分母に入れないため）。
+    usable = bets[
+        bets["win_odds"].notna()
+        & (bets["win_odds"] > 0)
+        & bets["actual_position"].notna()
+    ]
     skipped = int(len(bets) - len(usable))
     if usable.empty:
         return {"roi": None, "stake": 0, "payout": 0, "bets": 0, "skipped": skipped}
@@ -91,6 +106,29 @@ def verify_predictions(version: str) -> dict:
 
     total = len(df)
 
+    # 🔴 未確定（着順が入っていない）レースを除外する。
+    #    prediction_logs にはこれから走るレースの予想も入り、win_odds は
+    #    オッズ取得ジョブが結果より先に埋める。除外しないと
+    #    「賭け金は計上されるが払戻ゼロ」= 全部ハズレとして集計され、
+    #    的中率も ROI も過小になる（codex レビューで検出）。
+    #    `NULL <= 3` は False になるため的中率も同じ影響を受けていた。
+    pending = int(df["actual_position"].isna().sum())
+    df = df[df["actual_position"].notna()]
+    if df.empty:
+        logger.warning(
+            "version '%s' の予想 %d 件はすべて未確定レース（集計対象なし）",
+            version,
+            total,
+        )
+        return {
+            "version": version,
+            "total_predictions": total,
+            "settled_predictions": 0,
+            "pending_predictions": pending,
+        }
+    if pending:
+        logger.info("未確定レースの予想 %d 件を集計から除外した", pending)
+
     # Place hit: predicted_position <= 3 AND actual_position <= 3
     top3_predictions = df[df["predicted_position"] <= 3]
     place_hits = top3_predictions[top3_predictions["actual_position"] <= 3]
@@ -117,11 +155,23 @@ def verify_predictions(version: str) -> dict:
     ai_roi = _win_roi(top1_predictions)
     # 市場ベースライン: 毎レース1番人気に賭けた場合。
     # **AI がこれを超えられないなら、モデルは市場を再現しているだけ。**
-    fav_roi = _win_roi(df[df["win_favorite"] == 1])
+    # ⚠️ netkeiba はオッズ同値の馬に**同じ人気番号**を振るため、
+    #    `win_favorite == 1` は1レース複数頭になり得る（このリポジトリの
+    #    upset_score.py も `(g["win_favorite"] == 1).sum() != 1` でタイを
+    #    除外しており、発生を前提にしている）。レース単位で1頭に落とす。
+    favorites = (
+        df[df["win_favorite"] == 1]
+        .sort_values(["race_id_str", "win_odds", "predicted_position"])
+        .groupby("race_id_str", as_index=False)
+        .head(1)
+    )
+    fav_roi = _win_roi(favorites)
 
     summary = {
         "version": version,
         "total_predictions": total,
+        "settled_predictions": int(len(df)),
+        "pending_predictions": pending,
         "unique_races": unique_races,
         "win_hit_rate": float(win_hit_rate),
         "win_hits": int(len(win_hits)),
@@ -139,16 +189,22 @@ def verify_predictions(version: str) -> dict:
         # 市場ベースライン（1番人気に毎レース）
         "favorite_roi": fav_roi["roi"],
         "favorite_roi_bets": fav_roi["bets"],
-        # 控除率から来る「無技能の期待ROI」。これを超えていなければ賭ける意味は無い
-        "breakeven_roi_vs_takeout": JRA_WIN_PAYOUT_RATE,
-        "beats_takeout": (
-            ai_roi["roi"] is not None and ai_roi["roi"] > JRA_WIN_PAYOUT_RATE
+        # 🔴 実際に増えるかどうかはこれだけが答え（ROI > 1.0）
+        "breakeven_roi": BREAKEVEN_ROI,
+        "is_profitable": (ai_roi["roi"] is not None and ai_roi["roi"] > BREAKEVEN_ROI),
+        # 参考線: 無技能で賭け続けた期待値（控除率由来）。超えても赤字は赤字
+        "random_bet_expected_roi": RANDOM_BET_EXPECTED_ROI,
+        "beats_random_bet": (
+            ai_roi["roi"] is not None and ai_roi["roi"] > RANDOM_BET_EXPECTED_ROI
         ),
         "beats_favorite": (
             ai_roi["roi"] is not None
             and fav_roi["roi"] is not None
             and ai_roi["roi"] > fav_roi["roi"]
         ),
+        # 🔴 件数が少ないと ROI は高オッズ1本で大きく動く。フラグを鵜呑みにしないこと
+        "roi_sample_is_small": ai_roi["bets"] < MIN_BETS_FOR_RELIABLE_ROI,
+        "min_bets_for_reliable_roi": MIN_BETS_FOR_RELIABLE_ROI,
     }
 
     logger.info(
@@ -163,13 +219,22 @@ def verify_predictions(version: str) -> dict:
         len(top3_predictions),
     )
     logger.info(
-        "  単勝ROI: AI◎=%s / 1番人気=%s / 控除率の壁=%.0f%% "
-        "→ 控除率超え=%s, 市場超え=%s",
+        "  単勝ROI: AI◎=%s (%d点) / 1番人気=%s"
+        " → 黒字(>100%%)=%s / 無技能(80%%)超え=%s / 市場超え=%s%s",
         f"{ai_roi['roi']:.1%}" if ai_roi["roi"] is not None else "N/A",
+        ai_roi["bets"],
         f"{fav_roi['roi']:.1%}" if fav_roi["roi"] is not None else "N/A",
-        JRA_WIN_PAYOUT_RATE * 100,
-        summary["beats_takeout"],
+        summary["is_profitable"],
+        summary["beats_random_bet"],
         summary["beats_favorite"],
+        f"（⚠️ {MIN_BETS_FOR_RELIABLE_ROI}点未満なのでROIは不安定）"
+        if summary["roi_sample_is_small"]
+        else "",
     )
+    if summary["beats_random_bet"] and not summary["is_profitable"]:
+        logger.warning(
+            "  ⚠️ 無技能の期待値(80%%)は超えているが ROI は100%%未満。"
+            "賭け続ければ減る。「市場に勝った」と「儲かる」は別。"
+        )
 
     return summary

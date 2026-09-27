@@ -102,3 +102,45 @@ class TestRunSanityChecks:
         # 上位は AUC 低下の降順
         top = [f for f, _ in result["top_features_by_auc_drop"]]
         assert top[0] == "signal", f"最重要が signal でない: {top}"
+
+
+class TestCategoricalFeatures:
+    """
+    categorical 列があってもサニティチェックが動くこと。
+
+    ⚠️ 回帰テスト。当初 `rng.permutation(series.to_numpy())` で代入していたため
+    categorical の dtype が落ち、LightGBM が
+    "train and valid dataset categorical_feature do not match" で例外を投げた。
+    本番の特徴量は surface / track_condition など6列が categorical なので、
+    これを踏むと **学習が保存まで到達できず完全に止まる**（codex レビューで検出）。
+    """
+
+    def _fit_with_categorical(self, n: int = 800, seed: int = 0):
+        rng = np.random.default_rng(seed)
+        surface = pd.Categorical(rng.choice(["芝", "ダ"], n))
+        num = rng.normal(size=n)
+        y = (rng.uniform(size=n) < 1 / (1 + np.exp(-1.5 * num))).astype(int)
+        X = pd.DataFrame({"num": num, "surface": surface})
+        booster = lgb.train(
+            {"objective": "binary", "verbose": -1, "seed": seed},
+            lgb.Dataset(X, label=y, categorical_feature=["surface"]),
+            num_boost_round=30,
+        )
+        return booster, X, y
+
+    def test_permutation_works_with_categorical(self) -> None:
+        booster, X, y = self._fit_with_categorical()
+        drops = permutation_auc_drop(booster, X, y)
+        assert set(drops) == {"num", "surface"}
+
+    def test_dtype_is_preserved(self) -> None:
+        """シャッフル後も categorical dtype が保たれること。"""
+        booster, X, y = self._fit_with_categorical()
+        before = X["surface"].dtype
+        permutation_auc_drop(booster, X, y)
+        assert X["surface"].dtype == before, "入力側の dtype が壊れている"
+
+    def test_run_sanity_checks_with_categorical(self) -> None:
+        booster, X, y = self._fit_with_categorical()
+        result = run_sanity_checks(booster, X, y)
+        assert "permutation_auc_drop" in result
